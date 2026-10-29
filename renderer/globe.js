@@ -163,7 +163,7 @@
   let el = {};               // 元素引用
   let loc = null;            // {lat, lon, name}
   let times = null;          // {sunrise, sunset}  Date | null（来自 Open-Meteo）
-  let moonTimes = { rise: null, set: null };
+  let moonTimes = null; // 已废弃：月出月落改由 renderPanel 按模拟日动态推算
   let speed = 1;             // 1=真实，DEMO_SPEED=演示
   let base = Date.now(), epoch = Date.now();
   let suspended = false, onScreen = true, lastGeo = 0, raf = 0;
@@ -466,16 +466,30 @@
   }
 
   /* ================= 信息栏（每 30 秒刷新） ================= */
+  // 取「模拟时刻所在自然日」的日出日落：API 的 times 仅当与模拟同一天才采用（权威值），
+  // 否则按模拟日期天文推算——否则演示自转越过当天后，进度条会永久卡死在端点、不随翻天复位。
+  function dayRiseSet(ms) {
+    const rs = riseSet('sun', ms, loc.lat, loc.lon);
+    let sr = rs.rise || null, ss = rs.set || null;
+    if (times && times.sunrise && times.sunset) {
+      const a = new Date(times.sunrise.getTime()), b = new Date(ms);
+      if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()) {
+        sr = times.sunrise.getTime(); ss = times.sunset.getTime();
+      }
+    }
+    return { sr, ss };
+  }
+
   function renderPanel() {
     const ms = globeNow();
     const now = new Date(ms);
     const lat = loc.lat, lon = loc.lon;
-    const sr = times && times.sunrise ? times.sunrise.getTime() : (riseSet('sun', ms, lat, lon).rise || null);
-    const ss = times && times.sunset ? times.sunset.getTime() : (riseSet('sun', ms, lat, lon).set || null);
+    const { sr, ss } = dayRiseSet(ms);
+    const mt = riseSet('moon', ms, lat, lon);
     el.sunrise.textContent = hhmm(sr);
     el.sunset.textContent = hhmm(ss);
-    el.moonrise.textContent = hhmm(moonTimes.rise);
-    el.moonset.textContent = hhmm(moonTimes.set);
+    el.moonrise.textContent = hhmm(mt.rise);
+    el.moonset.textContent = hhmm(mt.set);
 
     if (sr && ss) {
       const len = ss - sr;
@@ -501,9 +515,7 @@
   function updateBar() {
     const ms = globeNow();
     const now = new Date(ms);
-    const lat = loc.lat, lon = loc.lon;
-    const sr = times && times.sunrise ? times.sunrise.getTime() : (riseSet('sun', ms, lat, lon).rise || null);
-    const ss = times && times.sunset ? times.sunset.getTime() : (riseSet('sun', ms, lat, lon).set || null);
+    const { sr, ss } = dayRiseSet(ms);
     el.endA.textContent = '日出 ' + hhmm(sr);
     el.endB.textContent = '日落 ' + hhmm(ss);
     if (sr && ss) {
@@ -718,7 +730,7 @@
         sunset: new Date(daily.sunset[0])
       };
     }
-    moonTimes = riseSet('moon', Date.now(), loc.lat, loc.lon);
+    moonTimes = null;
     if (posChanged && el.marker) {
       view.lat = newLoc.lat; view.lon = newLoc.lon;   // 换地点 → 相机回到定位点居中
       renderStatic();
@@ -737,7 +749,8 @@
       termGeom, perpBasis, globeNow,
       getView: () => ({ lat: view.lat, lon: view.lon }),
       getSpeed: () => speed,
-      setSimTime: t => { base = t; epoch = Date.now(); }
+      setSimTime: t => { base = t; epoch = Date.now(); },
+      renderNow: () => { renderFrame(); }
     }
   };
 })();

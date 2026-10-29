@@ -467,6 +467,8 @@
 
   function setUpdateStatus(t) { const el = $('updateStatus'); if (el) el.textContent = t; }
   function hideUpdateBanner() { const b = $('updateBanner'); if (b) b.hidden = true; }
+  // 「稍后」按 版本+状态 记忆：同一版本的同一提醒只弹一次（跨启动、跨后台检查不复发）
+  function dismissedKey(type, ver) { return 'updDismiss_' + type + '_' + ver; }
 
   function showUpdateBanner(html, primaryLabel, showPrimary) {
     const b = $('updateBanner'); if (!b) return;
@@ -484,8 +486,10 @@
     switch (s.type) {
       case 'available':
         manualCheck = false;
-        showUpdateBanner(`发现新版本 <b>v${esc(s.version)}</b>（当前 ${cur}）`, '立即更新', true);
         setUpdateStatus(`发现新版本 v${esc(s.version)}`);
+        if (!localStorage.getItem(dismissedKey('available', s.version))) {
+          showUpdateBanner(`发现新版本 <b>v${esc(s.version)}</b>（当前 ${cur}）`, '立即更新', true);
+        }
         break;
       case 'downloading':
         $('updateBanner').hidden = false;
@@ -494,8 +498,10 @@
         setUpdateStatus(`正在下载 ${s.percent || 0}%`);
         break;
       case 'downloaded':
-        showUpdateBanner(`新版本 <b>v${esc(s.version)}</b> 已就绪，重启后完成安装`, '立即重启', true);
         setUpdateStatus('更新已就绪，重启后安装');
+        if (!localStorage.getItem(dismissedKey('downloaded', s.version))) {
+          showUpdateBanner(`新版本 <b>v${esc(s.version)}</b> 已就绪，重启后完成安装`, '立即重启', true);
+        }
         break;
       case 'up-to-date':
         if (manualCheck) setUpdateStatus(`已是最新版本（${cur}）`);

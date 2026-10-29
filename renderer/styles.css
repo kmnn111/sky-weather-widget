@@ -735,6 +735,8 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
 .update-banner .ub-text b { color: var(--sun); font-weight: 700; }
 .update-banner .ub-actions { display: flex; gap: 7px; flex-shrink: 0; }
 .update-banner .pill-btn[hidden] { display: none; }
+/* 吸顶小窗（docked 收起）不画横幅：透明窗外会露出残留卡片 */
+body.docked .update-banner { display: none !important; }
 
 /* ================= 图标动画（iOS 标准：只动 transform/opacity，GPU 合成、不重排、低功耗） ================= */
 .ico [class^="ico-"], .ico .drop, .ico .flake { transform-box: fill-box; }
