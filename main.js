@@ -100,6 +100,7 @@ let dockTimer = null;
 let programmatic = 0;                 // 程序改 bounds 的时间戳，抑制吸附/位置记忆
 let hoverPoll = null;
 let hoverArmed = true;                // "离开再进入"才展开，避免刚放下小窗就弹开
+let baseSize = { w: 480, h: 920 };    // 窗口基准尺寸（启动时从设置读入并校验；窗口固定尺寸，任何异常改写都纠回它）
 
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 function setBoundsSafe(r) {
@@ -109,8 +110,7 @@ function setBoundsSafe(r) {
 }
 /* setShape：窗口只在小窗矩形内渲染/响应鼠标，其余区域完全穿透 */
 function pillShapeRect() {
-  const b = win.getBounds();
-  return [{ x: Math.round((b.width - PILL_W) / 2), y: 0, width: PILL_W, height: PILL_H }];
+  return [{ x: Math.round((baseSize.w - PILL_W) / 2), y: 0, width: PILL_W, height: PILL_H }];
 }
 function setShapePill() {
   if (!win || win.isDestroyed()) return;
@@ -118,8 +118,7 @@ function setShapePill() {
 }
 function setShapeFull() {
   if (!win || win.isDestroyed()) return;
-  const b = win.getBounds();
-  try { win.setShape([{ x: 0, y: 0, width: b.width, height: b.height }]); } catch (e) { }
+  try { win.setShape([{ x: 0, y: 0, width: baseSize.w, height: baseSize.h }]); } catch (e) { }
 }
 function sendDockState() {
   if (win && !win.isDestroyed()) win.webContents.send('dock:state', { docked: !!settings.docked, expanded: dockExpanded });
@@ -160,14 +159,14 @@ function dockWindow() {
   if (!win || win.isDestroyed()) return;
   const b = win.getBounds();
   const wa = screen.getDisplayMatching(b).workArea;
-  // 只移动、不改尺寸：小窗 x 为中心记忆位
-  const px = clamp(Math.round(b.x + b.width / 2 - PILL_W / 2), wa.x, wa.x + wa.width - PILL_W);
+  // 只移动、不改尺寸（一律按基准尺寸算，异常宽度不会被带进吸附位）：小窗 x 为中心记忆位
+  const px = clamp(Math.round(b.x + baseSize.w / 2 - PILL_W / 2), wa.x, wa.x + wa.width - PILL_W);
   if (dockTimer) { clearTimeout(dockTimer); dockTimer = null; }
   dockExpanded = false;
   hoverArmed = false; // 刚放下不展开，等光标离开后再进入才展开
   settings.docked = true; settings.dockX = px;
   persist({ docked: true, dockX: px });
-  setBoundsSafe({ x: px - Math.round((b.width - PILL_W) / 2), y: wa.y, width: b.width, height: b.height });
+  setBoundsSafe({ x: px - Math.round((baseSize.w - PILL_W) / 2), y: wa.y, width: baseSize.w, height: baseSize.h });
   setShapePill();
   sendDockState();
   ensureHoverPoll();
@@ -194,10 +193,10 @@ function collapseDock() {
   if (!win || win.isDestroyed()) return;
   dockExpanded = false;
   hoverArmed = false;
-  sendDockState();         // CSS 先淡出
-  setTimeout(() => {       // 淡出完成后再裁剪形状，避免内容突然消失
+  sendDockState();         // CSS 先淡出 + 天空层形变收进小窗
+  setTimeout(() => {       // 淡出/形变（~240ms）完成后再裁剪形状，避免内容突然消失
     if (win && !win.isDestroyed() && settings.docked && !dockExpanded) setShapePill();
-  }, 230);
+  }, 260);
   ensureHoverPoll();
 }
 /* 拖拽结束：距顶端够近 → 吸顶收起；吸顶态拖离 → 恢复完整插件 */
@@ -340,7 +339,15 @@ function applyAutoLaunch(on) {
 /* ---------------- 窗口 ---------------- */
 function createWindow() {
   const wa = screen.getPrimaryDisplay().workArea;
-  const size = settings.winSize || { w: 480, h: 920 };
+  // 校验持久化尺寸：窗口设计为固定尺寸（resizable:false），任何越界值都是
+  // 历史坏数据（系统/DPI/吸附异常改写后被存下），回退默认并纠正落盘，防启动即"超宽窗"
+  let size = settings.winSize;
+  if (!size || !Number.isFinite(size.w) || !Number.isFinite(size.h) ||
+    size.w < 380 || size.w > 1280 || size.h < 560 || size.h > 2200) {
+    size = { w: 480, h: 920 };
+    persist({ winSize: { w: size.w, h: size.h } });
+  }
+  baseSize = { w: Math.round(size.w), h: Math.round(size.h) };
   const startDocked = !!settings.docked && settings.edgeDock !== false;
   let x, y;
   if (startDocked) {
@@ -481,6 +488,46 @@ function createWindow() {
         await shoot('shot-12.png');   // 淡出尾声（约180ms，裁剪前）
         await new Promise(r => setTimeout(r, 720));
         await shootDesktop('shot-8.png');
+        // ---- v1.0.16 自检：夜色大小窗形变（天空层连续收进/长出，不再瞬间硬切） ----
+        await win.webContents.executeJavaScript('document.body.classList.add("night")');
+        expandDock();
+        await new Promise(r => setTimeout(r, 600));
+        await shoot('shot-15-night-full.png');            // 夜色完整窗
+        collapseDock();
+        // 形变真值探针（v1.0.16）：逐帧采样 #sky 宽度——收起必须是插值形变而非瞬间硬切。
+        // capturePage 抓不到可靠中间帧，用页面内 rAF 采样做断言。
+        const morph = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const sky = document.getElementById('sky');
+          return new Promise(r => {
+            const s = [];
+            const t0 = performance.now();
+            const tick = () => {
+              const t = performance.now() - t0;
+              s.push([Math.round(t), getComputedStyle(sky).clipPath]);
+              if (t < 650) requestAnimationFrame(tick); else r(JSON.stringify(s));
+            };
+            requestAnimationFrame(tick);
+          });
+        })()`));
+        const distinct = new Set(morph.map(x => x[1])).size;
+        const last = morph.length ? morph[morph.length - 1][1] : '';
+        const settled = /856px|100% - 64px/.test(last);
+        console.log('[morph-test] collapse #sky clipPath', JSON.stringify(morph.filter((_, i) => i % 3 === 0)), 'frames=' + morph.length, (distinct >= 3 && settled) ? 'PASS' : 'FAIL');
+        await shoot('shot-16-night-collapse-mid.png');    // 收起过程抓帧（近尾声）
+        await new Promise(r => setTimeout(r, 900));
+        await shoot('shot-17-night-pill.png');            // 收起完成的夜色小窗
+        expandDock();
+        await new Promise(r => setTimeout(r, 120));
+        await shoot('shot-18-night-expand-mid.png');      // 展开形变进行中
+        await new Promise(r => setTimeout(r, 700));
+        await win.webContents.executeJavaScript('document.body.classList.remove("night")');
+        // ---- v1.0.16 自检：窗口尺寸自愈（系统擅改尺寸后自动纠回基准，坏尺寸不落盘） ----
+        const b0 = win.getBounds();
+        win.setBounds({ x: b0.x, y: b0.y, width: 1600, height: 900 }); // 模拟 DPI/吸附异常改写
+        await new Promise(r => setTimeout(r, 1300));
+        const b1 = win.getBounds();
+        const healOk = b1.width === baseSize.w && b1.height === baseSize.h;
+        console.log('[size-test] rogue-resize self-heal', JSON.stringify({ base: baseSize, after: { w: b1.width, h: b1.height } }), healOk ? 'PASS' : 'FAIL');
         // 截图调试不留存档状态
         settings.docked = false; persist({ docked: false });
       } catch (e) { console.error('[shot] failed', e); }
@@ -595,6 +642,77 @@ function createWindow() {
         await shoot('g-6-demo-a.png', rect);
         await new Promise(r => setTimeout(r, 1200));
         await shoot('g-7-demo-b.png', rect);
+        // 5. 地平线裁剪回归（2026-10-29 全绿 bug）：多视角像素级 + 几何双重断言
+        // 旧 polyD 把背面顶点压到球沿后仍连直线 → 背面顶点连成大楔形把圆盘填成陆地绿。
+        // 断言一（几何指纹）：各陆地多边形投影面积（鞋带公式）< 整盘 40%（正确时单洲 ≤20%，
+        // 楔形 bug 时会顶到接近 100%）；断言二：正午整面皆昼时陆地绿像素占比 < 42%。
+        const greenShare = async r => {
+          const img = await win.webContents.capturePage(r);
+          const bmp = img.toBitmap();
+          let green = 0, total = 0;
+          for (let i = 0; i < bmp.length; i += 4) {
+            if (bmp[i + 3] < 128) continue;
+            total++;
+            const b = bmp[i], g = bmp[i + 1], rr = bmp[i + 2];
+            if (g > rr + 18 && g > b + 18) green++;
+          }
+          return total ? green / total : 0;
+        };
+        const stageRect = { x: Math.round(geo0.stage.x), y: Math.round(geo0.stage.y), width: Math.round(geo0.stage.w), height: Math.round(geo0.stage.h) };
+        const noonUTC = lon => Date.UTC(2026, 9, 29, 12, 0, 0) - lon * 4 * 60000;
+        for (const [name, lat, lon, assert] of [
+          ['photo', -5, -60, true], ['americas', 30, -60, true], ['pacific', 10, -160, true],
+          ['atlantic', 20, -35, true], ['asia', 30, 121, false], ['south', -60, 0, false]
+        ]) {
+          await win.webContents.executeJavaScript(`Globe._debug.setSimTime(${noonUTC(lon)}); Globe._debug.setView(${lat}, ${lon})`);
+          await new Promise(r => setTimeout(r, 250));
+          const areas = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+            const R = +document.querySelector('#gDisc circle').getAttribute('r'), disc = Math.PI * R * R;
+            return JSON.stringify([...document.querySelectorAll('#gLands path')].map(p => {
+              const nums = (p.getAttribute('d') || '').match(/-?[\\d.]+/g) || [];
+              const n = nums.length / 2;
+              let a = 0;
+              for (let k = 0; k < n; k++) {
+                a += (+nums[2 * k]) * (+nums[2 * ((k + 1) % n) + 1]) - (+nums[2 * ((k + 1) % n)]) * (+nums[2 * k + 1]);
+              }
+              return Math.abs(a / 2) / disc;
+            }));
+          })()`));
+          const maxArea = Math.max(...areas);
+          const share = await greenShare(stageRect);
+          await shoot('g-8-clip-' + name + '.png', stageRect);
+          const detail = 'greenShare=' + (share * 100).toFixed(1) + '% maxPolyArea=' + (maxArea * 100).toFixed(1) + '%';
+          if (assert) check('horizon-clip-' + name, share < 0.42 && maxArea < 0.40, detail);
+          else console.log('[globe-test] horizon-clip-' + name, detail, '(目检)');
+        }
+        // 5b. 全角度洪水扫描（回归常备）：每 10° 一个相机，鞋带面积找「陆地填满圆盘」。
+        // 楔形/整圆 bug 时单洲面积 83~100%；欧亚居中正对相机的真实最大面积约 38%，
+        // 阈值 0.45 留足双向余量——命中即为地平线裁剪回归。
+        const scan = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const R = +document.querySelector('#gDisc circle').getAttribute('r'), disc = Math.PI * R * R;
+          const names = ['africa','eurasia','namerica','samerica','australia','greenland','madagascar','japan','uk','ireland','nz','tasmania','srilanka','cuba','sumatra','java','borneo','newguinea','philippines','antarctica'];
+          const worst = [];
+          for (let lat = -80; lat <= 80; lat += 10) {
+            for (let lon = -180; lon < 180; lon += 10) {
+              Globe._debug.setView(lat, lon);
+              let mx = 0, who = '';
+              document.querySelectorAll('#gLands path').forEach((p, i) => {
+                const nums = (p.getAttribute('d') || '').match(/-?[\\d.]+/g) || [];
+                const n = nums.length / 2;
+                let a = 0;
+                for (let k = 0; k < n; k++) {
+                  a += (+nums[2 * k]) * (+nums[2 * ((k + 1) % n) + 1]) - (+nums[2 * ((k + 1) % n)]) * (+nums[2 * k + 1]);
+                }
+                const s = Math.abs(a / 2) / disc;
+                if (s > mx) { mx = s; who = names[i] || i; }
+              });
+              if (mx > 0.45) worst.push([lat, lon, who, +(mx * 100).toFixed(1)]);
+            }
+          }
+          return JSON.stringify({ hits: worst.length, worst: worst.slice(0, 30) });
+        })()`));
+        console.log('[globe-test] flood-scan', JSON.stringify(scan));
+        check('flood-scan-clean', scan.hits === 0, JSON.stringify(scan));
         console.log('[globe-test] DONE', passes.every(Boolean) ? 'PASS' : 'FAIL', '(' + passes.filter(Boolean).length + '/' + passes.length + ')');
       } catch (e) { console.error('[shot] failed', e); }
       app.exit(0);
@@ -686,12 +804,22 @@ function createWindow() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       if (!win || win.isDestroyed()) return;
+      if (Date.now() - programmatic < 600) return;
       const b = win.getBounds();
-      // 吸顶小窗 / 程序改位 / 非正常尺寸时不覆盖位置记忆
-      if (settings.docked || b.height < 200 || Date.now() - programmatic < 600) return;
-      persist({ winPos: { x: b.x, y: b.y }, winSize: { w: b.width, h: b.height } });
+      // 系统（DPI 切换 / 吸附 / 休眠恢复等）可能擅改窗口尺寸：
+      // 立即纠回基准尺寸（只保位置），坏尺寸绝不落盘固化
+      if (b.width !== baseSize.w || b.height !== baseSize.h) {
+        setBoundsSafe({ x: b.x, y: b.y, width: baseSize.w, height: baseSize.h });
+        return;
+      }
+      if (settings.docked) return; // 吸顶小窗不覆盖位置记忆
+      persist({ winPos: { x: b.x, y: b.y }, winSize: { w: baseSize.w, h: baseSize.h } });
     }, 400);
   };
+  // 固定尺寸窗口：任何交互/系统触发的 resize 都是异常，直接拒绝（程序改位不受影响）
+  win.on('will-resize', (e) => {
+    if (Date.now() - programmatic >= 600) e.preventDefault();
+  });
   win.on('move', saveGeom);
   win.on('resize', saveGeom);
   // 拖拽结束（debounce，兼容 Windows 无 moved 事件的情况）→ 吸附 / 解除吸附

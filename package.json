@@ -1,7 +1,7 @@
 {
   "name": "sky-weather-widget",
   "productName": "云上晴雨",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "云上晴雨 - 宫崎骏风格 Windows 桌面天气插件：透明无边框沉浸式，动态天气、空气质量、穿衣出行建议、万年历宜忌吉日",
   "main": "main.js",
   "author": "大软子哥哥",

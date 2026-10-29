@@ -57,18 +57,43 @@
     $('lunarLine').innerHTML = `${bits.map(esc).join(' · ')} ${extra}`;
   }
 
+  /* 昼夜判定：以「今日日出/日落的精确时刻」为准（数据为当地本地时间）。
+     is_day 标志只作兜底——它随数据刷新才翻转，时机不准 */
+  function computeIsDay(w, now) {
+    if (w && w.daily && w.daily.sunrise && w.daily.sunrise[0] && w.daily.sunset && w.daily.sunset[0]) {
+      const sr = new Date(w.daily.sunrise[0]).getTime();
+      const ss = new Date(w.daily.sunset[0]).getTime();
+      if (Number.isFinite(sr) && Number.isFinite(ss) && ss > sr) {
+        return now.getTime() >= sr && now.getTime() < ss;
+      }
+    }
+    return w ? !!w.current.is_day : (now.getHours() > 6 && now.getHours() < 19);
+  }
+
+  let flipTimer = null;
   function updateSky() {
     const now = new Date();
     const w = state.data && state.data.weather;
-    const group = w ? Weather.codeInfo(w.current.weather_code, w.current.is_day).group : 'clear';
-    const isDay = w ? !!w.current.is_day : (now.getHours() > 6 && now.getHours() < 19);
-    // setMode 统一设置 night（is_day 权威）并重绘天空，paintSky 不再按钟点猜昼夜
+    const isDay = computeIsDay(w, now);
+    const group = w ? Weather.codeInfo(w.current.weather_code, isDay).group : 'clear';
+    // setMode 统一设置 night 并重绘天空，paintSky 不再按钟点猜昼夜
     FX.setMode(group, isDay, now);
     if (w) {
       FX.placeCelestial(w.daily.sunrise[0], w.daily.sunset[0]);
     }
     // 日落后整个界面切换到星空/黑夜暗色调（body.night 覆盖主题变量，纯 CSS 过渡）
     document.body.classList.toggle('night', !isDay);
+    // 精确在日出/日落时刻翻转主题（不必等 60s 轮询或数据刷新）
+    clearTimeout(flipTimer);
+    if (w && w.daily && w.daily.sunrise && w.daily.sunrise[0] && w.daily.sunset && w.daily.sunset[0]) {
+      const nexts = [w.daily.sunrise[0], w.daily.sunset[0]]
+        .map(s => new Date(s).getTime())
+        .filter(t => Number.isFinite(t) && t > now.getTime());
+      if (nexts.length) {
+        const delay = Math.min.apply(null, nexts) - now.getTime() + 1500;
+        flipTimer = setTimeout(updateSky, Math.min(delay, 2147483647));
+      }
+    }
   }
 
   /* ================= 天气渲染 ================= */
@@ -81,7 +106,7 @@
   function renderHero() {
     const w = state.data.weather;
     const c = w.current, d = w.daily;
-    const info = Weather.codeInfo(c.weather_code, c.is_day);
+    const info = Weather.codeInfo(c.weather_code, computeIsDay(w, new Date()));
     $('tempNow').textContent = Math.round(c.temperature_2m);
     $('nowIcon').innerHTML = `<span class="big-icon">${Icons.svg(info.icon, 58)}</span>`;
     $('condText').textContent = info.text;
@@ -261,7 +286,7 @@
     const w = state.data && state.data.weather;
     if (!w) { $('pillSub').textContent = lunar; return; }
     const c = w.current;
-    const info = Weather.codeInfo(c.weather_code, c.is_day);
+    const info = Weather.codeInfo(c.weather_code, computeIsDay(w, new Date()));
     $('pillTemp').textContent = Math.round(c.temperature_2m);
     $('pillIcon').innerHTML = Icons.svg(info.icon, 30); // 内置光芒旋转/雨滴下落/云朵浮动动画
     $('pillSub').textContent = `${lunar} · ${info.text}`;

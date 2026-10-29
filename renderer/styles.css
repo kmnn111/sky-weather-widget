@@ -82,6 +82,11 @@ html, body {
 #sky {
   position: absolute; inset: 0; z-index: -3;
   overflow: hidden;
+  /* 大小窗切换：天空层用 clip-path 裁剪形变（整窗 ↔ 顶部小窗），iOS 式收进/长出。
+     只动裁剪、不改布局（零 layout 抖动，合成层直接裁），
+     夜色下 #sky 是不透明深底，裁剪平滑过渡、不再瞬间硬切 */
+  clip-path: inset(0 round 33px);
+  transition: clip-path .24s cubic-bezier(.32, .72, .28, 1);
 }
 #skyA, #skyB {
   position: absolute; inset: 0;
@@ -150,7 +155,10 @@ html, body {
   to   { transform: translateX(112vw); }
 }
 
-#fx { position: absolute; inset: 0; z-index: -2; pointer-events: none; }
+#fx {
+  position: absolute; inset: 0; z-index: -2; pointer-events: none;
+  transition: opacity .22s ease, visibility 0s;
+}
 
 /* ================= 吸顶温度小窗 =================
    窗口尺寸不变，收起/展开靠 CSS 淡入淡出 + 主进程 setShape 裁剪。
@@ -169,12 +177,14 @@ html, body {
     inset 0 -1px 0 rgba(255, 255, 255, 0.2),
     0 14px 36px rgba(35, 28, 20, 0.18);
   opacity: 0; visibility: hidden;
-  transform: translateX(-50%) translateY(-10px);
+  /* 只做纯淡入淡出，不再 translateY 位移：夜色小窗不透明，
+     下滑入场会读作"卡片往下插"的突兀感 */
+  transform: translateX(-50%);
   transition: opacity .22s ease, transform .22s ease, visibility 0s .22s;
 }
 body.docked:not(.expanded) #pill {
   opacity: 1; visibility: visible;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%);
   /* 贴边一侧（顶边）不画白描边/白高光：否则屏幕边缘出现一条白色细线 */
   border-top-color: transparent;
   /* 外投影会被 setShape 矩形裁剪出"方框"边，收起态只留底部内高光 */
@@ -191,19 +201,26 @@ body.docked #frame::after {
 body.docked:not(.expanded) #frame::after {
   opacity: 0;
 }
-/* 收起态：天空层裁成小窗同款圆角，圆弧外完全透明，不再有一圈矩形 */
+/* 收起态：天空层裁剪成小窗同款圆角矩形（clip-path 可插值，配合 #sky 的裁剪形变过渡），
+   圆弧外完全透明，不再有一圈矩形 */
 body.docked:not(.expanded) #sky {
-  inset: auto; top: 0; left: 50%; right: auto; bottom: auto;
-  width: 248px; height: 64px;
-  transform: translateX(-50%);
-  border-radius: 22px; overflow: hidden;
+  clip-path: inset(0 calc(50% - 124px) calc(100% - 64px) calc(50% - 124px) round 22px);
 }
-body.docked:not(.expanded) #fx { display: none; }
-/* 收起态隐藏日月云星装饰，只留纯净渐变底色，避免玻璃后面出现"残影" */
+/* 收起态：粒子层淡出（不硬切 display，避免切换瞬间内容跳变） */
+body.docked:not(.expanded) #fx {
+  opacity: 0; visibility: hidden;
+  transition: opacity .22s ease, visibility 0s .22s;
+}
+/* 收起态淡出日月云星装饰，只留纯净渐变底色，避免玻璃后面出现"残影"。
+   用 opacity+visibility 而非 display:none——切换过程平滑淡出，不硬切。
+   !important：这些元素的透明度由 fx.js inline style 控制 */
 body.docked:not(.expanded) #stars,
 body.docked:not(.expanded) #sun,
 body.docked:not(.expanded) #moon,
-body.docked:not(.expanded) .clouds { display: none; }
+body.docked:not(.expanded) .clouds {
+  opacity: 0 !important; visibility: hidden;
+  transition: opacity .22s ease, visibility 0s .22s, transform 55s linear;
+}
 .pill-grip {
   display: flex; align-items: center; justify-content: center;
   width: 42px; height: 100%; flex: none;

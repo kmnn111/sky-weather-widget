@@ -255,21 +255,115 @@
   }
 
   /* ================= 静态几何（切换地点时重算一次） ================= */
+  // 海陆多边形 → SVG 路径（地平线裁剪）。
+  // 旧实现逐点直线连接、背面顶点钳到球沿：大洲整体转到背面但 max z 略高于旧阈值
+  // -0.02 时仍被放行，全部顶点被压上球沿后逐点连线包住整个圆盘 → 白昼面整片
+  // 泛陆地绿（全绿 bug）。
+  // 新实现：可见顶点正常投影；跨 z=0 的边取真实交点（恰落球沿）；背面顶点绝不
+  // 进路径，隐藏段以球沿弧闭合（弧向由「中点落在球面多边形内」判定）；全背面直接
+  // 返回 ''。路径点全部落在圆盘内或球沿上，几何上不可能再整盘泛绿。
   function polyD(poly) {
-    let d = '';
-    for (let i = 0; i < poly.length; i++) {
-      const s = scr(viewP(pvec(poly[i][0], poly[i][1])));
-      d += (i ? 'L' : 'M') + s[0].toFixed(1) + ' ' + s[1].toFixed(1);
+    const n = poly.length;
+    const vs = new Array(n);
+    let anyVis = false;
+    for (let i = 0; i < n; i++) {
+      vs[i] = viewP(pvec(poly[i][0], poly[i][1]));
+      if (vs[i][2] >= 0) anyVis = true;
+    }
+    if (!anyVis) return '';                     // 全在背面：不画（全绿 bug 根源）
+    let start = 0;
+    while (vs[start][2] < 0) start++;
+    const wrapPI = d => {
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      return d;
+    };
+    const pts = [];                             // 路径点（视坐标 xy，|·|≤1）
+    let run = null;                             // 当前隐藏段 {a0,a1,vote,last}
+    // 地平圆上给定视角 a 的点是否落在球面多边形内部（绕数法，与绕向无关）。
+    // 地平圆被多边形边界切成进出交替的段，裁剪弧=落在多边形内的那一段；
+    // 两支候选弧里取中点在内的一支——贴地平线碎片=短弧、兜过背面的缺口=长弧通吃。
+    // 顶点落在测试点对跖点附近时方位角奇异、绕数被 ±2π 步翻转污染 → 返回 null
+    // （不可信一律保守取短弧）。退化跨界（跨界点恰在顶点上）的反足测试必撞奇异顶点，
+    // 调用方须改用扰动双测——早前没这层防护，小碎片被拉成近整圆弧 → 洪水。
+    const arcMidInside = a => {
+      const cx = Math.cos(a), cy = Math.sin(a);
+      const q = [cx * cam.e[0] + cy * cam.n[0],
+                 cx * cam.e[1] + cy * cam.n[1],
+                 cx * cam.e[2] + cy * cam.n[2]];
+      const { u, v } = perpBasis(q);
+      let wind = 0, prev = 0;
+      for (let i = 0; i <= n; i++) {
+        const P = pvec(poly[i % n][0], poly[i % n][1]);
+        if (P[0] * q[0] + P[1] * q[1] + P[2] * q[2] < -0.98) return null;   // 对跖奇异→不可信
+        const phi = Math.atan2(P[0] * v[0] + P[1] * v[1] + P[2] * v[2],
+                               P[0] * u[0] + P[1] * u[1] + P[2] * u[2]);
+        if (i) wind += wrapPI(phi - prev);
+        prev = phi;
+      }
+      return Math.abs(wind) > Math.PI;
+    };
+    const endRun = () => {
+      if (!run) return;
+      const d0 = wrapPI(run.a1 - run.a0);
+      let sweep = d0;
+      if (Math.abs(d0) > 1e-6) {
+        const alt = d0 > 0 ? d0 - 2 * Math.PI : d0 + 2 * Math.PI;
+        if (arcMidInside(run.a0 + alt / 2) === true && arcMidInside(run.a0 + d0 / 2) === false) sweep = alt;
+      } else {
+        // 退化：两跨界点同角。反足点必是奇异顶点的对跖点，改 ±0.35 扰动双测，
+        // 两点都在内才认定「多边形兜过背面」→ 整圈；否则保守取零长弧
+        const anti = run.a0 + Math.PI;
+        if (arcMidInside(anti + 0.35) === true && arcMidInside(anti - 0.35) === true) {
+          sweep = (run.vote >= 0 ? 1 : -1) * 2 * Math.PI;
+        }
+      }
+      const m = Math.ceil(Math.abs(sweep) / (8 * Math.PI / 180)) || 1;
+      for (let k = 1; k < m; k++) {
+        const a = run.a0 + sweep * k / m;
+        pts.push([Math.cos(a), Math.sin(a)]);
+      }
+      pts.push([Math.cos(run.a1), Math.sin(run.a1)]);
+      run = null;
+    };
+    for (let k = 0; k < n; k++) {
+      const A = vs[(start + k) % n], B = vs[(start + k + 1) % n];
+      if (A[2] >= 0) {
+        endRun();
+        pts.push([A[0], A[1]]);
+      } else {
+        // 背面顶点：钳到球沿仅作弧向投票导引，绝不进路径
+        const r = Math.hypot(A[0], A[1]);
+        if (r > 0.02 && run) {
+          const a = Math.atan2(A[1] / r, A[0] / r);
+          run.vote += wrapPI(a - run.last);
+          run.last = a;
+        } // r 过小（正对相机背面）：角噪声大，跳过导引
+      }
+      if ((A[2] >= 0) !== (B[2] >= 0)) {
+        // 边跨越 z=0：取真实交点并径向归一到球沿
+        const t = A[2] / (A[2] - B[2]);
+        let x = A[0] + t * (B[0] - A[0]), y = A[1] + t * (B[1] - A[1]);
+        const rr = Math.hypot(x, y) || 1e-6;
+        x /= rr; y /= rr;
+        const a = Math.atan2(y, x);
+        if (!run) {
+          pts.push([x, y]);
+          run = { a0: a, a1: a, vote: 0, last: a };
+        } else {
+          run.a1 = a;
+          run.vote += wrapPI(a - run.last);
+          endRun();
+        }
+      }
+    }
+    endRun();                                   // 保险（正常情况下循环内已闭合）
+    if (!pts.length) return '';
+    let d = 'M' + (CX + pts[0][0] * R).toFixed(1) + ' ' + (CY - pts[0][1] * R).toFixed(1);
+    for (let i = 1; i < pts.length; i++) {
+      d += 'L' + (CX + pts[i][0] * R).toFixed(1) + ' ' + (CY - pts[i][1] * R).toFixed(1);
     }
     return d + 'Z';
-  }
-  function polyVisible(poly) {
-    let m = -2;
-    for (let i = 0; i < poly.length; i++) {
-      const z = viewP(pvec(poly[i][0], poly[i][1]))[2];
-      if (z > m) m = z;
-    }
-    return m > -0.02;
   }
   function lineD(pts) {
     let d = '', pen = false;
@@ -286,12 +380,11 @@
 
   function renderStatic() {
     setCam(view.lat, view.lon);
-    // 大洲
+    // 大洲（polyD 内部做地平线裁剪，全背面返回 '' 即不画）
     Object.keys(LAND).forEach(k => {
-      const p = geo.land[k];
-      p.setAttribute('d', polyVisible(LAND[k]) ? polyD(LAND[k]) : '');
+      geo.land[k].setAttribute('d', polyD(LAND[k]));
     });
-    geo.water.forEach((p, i) => p.setAttribute('d', polyVisible(WATER[i]) ? polyD(WATER[i]) : ''));
+    geo.water.forEach((p, i) => p.setAttribute('d', polyD(WATER[i])));
     // 经纬网
     geo.grat.forEach(g => g.el.setAttribute('d', lineD(g.pts)));
     // 大洲名称
@@ -819,6 +912,7 @@
       getSpeed: () => speed,
       setSimTime: t => { base = t; epoch = Date.now(); },
       renderNow: () => { renderFrame(); },
+      setView: (lat, lon) => { view.lat = lat; view.lon = lon; renderStatic(); renderFrame(); },
       isDragActive: () => dragging || scrubbing,
       getPause: () => ({
         suspended,
