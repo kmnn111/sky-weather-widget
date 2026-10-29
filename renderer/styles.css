@@ -720,20 +720,34 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
   background: rgba(255, 255, 255, 0.65); color: var(--ink); outline: none;
 }
 .update-url-row input:focus { border-color: var(--sun); }
+/* 显隐由 .show 类控制（hidden 属性会被 display:flex 覆盖，已弃用）；
+   iOS 弹性缓动：透明度 + 轻微上滑，纯合成层动画不触发重排。
+   版式：文字在上、按钮排下方（用户指定），文字再长也不会和按钮重叠。
+   width:max-content：fixed+left:50% 的收缩宽度会被卡在半屏，内容溢出白框——随内容撑开、max-width 封顶 */
 .update-banner {
-  position: fixed; top: 58px; left: 50%; transform: translateX(-50%);
-  z-index: 80; display: flex; align-items: center; gap: 14px;
-  padding: 11px 16px; max-width: 88%;
+  position: fixed; top: 58px; left: 50%;
+  transform: translate(-50%, -14px);
+  width: max-content; max-width: 88%;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  z-index: 80; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  padding: 12px 16px;
   background: rgba(255, 252, 246, 0.92);
   backdrop-filter: blur(24px) saturate(1.5);
   -webkit-backdrop-filter: blur(24px) saturate(1.5);
   border: 1px solid rgba(255, 255, 255, 0.65);
   border-radius: 16px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 12px 32px rgba(35, 28, 20, 0.2);
+  transition: opacity .32s cubic-bezier(.32, .72, 0, 1), transform .32s cubic-bezier(.32, .72, 0, 1), visibility 0s .32s;
 }
-.update-banner .ub-text { font-size: 12.5px; color: var(--ink); line-height: 1.55; white-space: nowrap; }
+.update-banner.show {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transform: translate(-50%, 0);
+  transition: opacity .32s cubic-bezier(.32, .72, 0, 1), transform .32s cubic-bezier(.32, .72, 0, 1), visibility 0s;
+}
+.update-banner .ub-text { font-size: 12.5px; color: var(--ink); line-height: 1.55; min-width: 0; }
 .update-banner .ub-text b { color: var(--sun); font-weight: 700; }
-.update-banner .ub-actions { display: flex; gap: 7px; flex-shrink: 0; }
+.update-banner .ub-text .nb { white-space: nowrap; } /* 版本号/括号注释整体换行，不被拦腰截断 */
+.update-banner .ub-actions { display: flex; gap: 8px; flex-shrink: 0; justify-content: flex-end; }
 .update-banner .pill-btn[hidden] { display: none; }
 /* 吸顶小窗（docked 收起）不画横幅：透明窗外会露出残留卡片 */
 body.docked .update-banner { display: none !important; }

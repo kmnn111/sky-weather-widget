@@ -466,9 +466,17 @@
   let lastUpdateState = null;
 
   function setUpdateStatus(t) { const el = $('updateStatus'); if (el) el.textContent = t; }
-  function hideUpdateBanner() { const b = $('updateBanner'); if (b) b.hidden = true; }
+  // 横幅显隐走 .show 类（CSS 过渡动画）：hidden 属性会被 .update-banner 的 display:flex 覆盖而失效，弃用
+  function hideUpdateBanner() { const b = $('updateBanner'); if (b) b.classList.remove('show'); }
   // 「稍后」按 版本+状态 记忆：同一版本的同一提醒只弹一次（跨启动、跨后台检查不复发）
   function dismissedKey(type, ver) { return 'updDismiss_' + type + '_' + ver; }
+  function dismissUpdateBanner() {
+    const s = lastUpdateState || {};
+    if ((s.type === 'available' || s.type === 'downloaded') && s.version) {
+      try { localStorage.setItem(dismissedKey(s.type, s.version), '1'); } catch (e) { }
+    }
+    hideUpdateBanner();
+  }
 
   function showUpdateBanner(html, primaryLabel, showPrimary) {
     const b = $('updateBanner'); if (!b) return;
@@ -476,7 +484,7 @@
     const p = $('ubPrimary');
     p.hidden = !showPrimary;
     if (showPrimary) { p.textContent = primaryLabel; p.disabled = false; }
-    b.hidden = false;
+    b.classList.add('show');
   }
 
   function onUpdateState(s) {
@@ -488,11 +496,11 @@
         manualCheck = false;
         setUpdateStatus(`发现新版本 v${esc(s.version)}`);
         if (!localStorage.getItem(dismissedKey('available', s.version))) {
-          showUpdateBanner(`发现新版本 <b>v${esc(s.version)}</b>（当前 ${cur}）`, '立即更新', true);
+          showUpdateBanner(`发现新版本 <span class="nb"><b>v${esc(s.version)}</b>（当前 ${cur}）</span>`, '立即更新', true);
         }
         break;
       case 'downloading':
-        $('updateBanner').hidden = false;
+        $('updateBanner').classList.add('show');
         $('ubText').innerHTML = `正在下载更新… <b>${s.percent || 0}%</b>`;
         $('ubPrimary').hidden = true;
         setUpdateStatus(`正在下载 ${s.percent || 0}%`);
@@ -500,7 +508,7 @@
       case 'downloaded':
         setUpdateStatus('更新已就绪，重启后安装');
         if (!localStorage.getItem(dismissedKey('downloaded', s.version))) {
-          showUpdateBanner(`新版本 <b>v${esc(s.version)}</b> 已就绪，重启后完成安装`, '立即重启', true);
+          showUpdateBanner(`<span class="nb">新版本 <b>v${esc(s.version)}</b></span> 已就绪，<span class="nb">重启后完成安装</span>`, '立即重启', true);
         }
         break;
       case 'up-to-date':
@@ -591,7 +599,7 @@
       if (s.type === 'available') sky.updateDownload();
       else if (s.type === 'downloaded') sky.updateInstall();
     });
-    $('ubLater').addEventListener('click', hideUpdateBanner);
+    $('ubLater').addEventListener('click', dismissUpdateBanner);
     if (sky.onUpdateState) sky.onUpdateState(onUpdateState);
 
     $('prevMonth').addEventListener('click', () => {

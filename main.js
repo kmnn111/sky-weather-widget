@@ -42,6 +42,13 @@ let settings = {
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
   try { Object.assign(settings, JSON.parse(fs.readFileSync(settingsFile(), 'utf8'))); } catch (e) { /* 首次运行 */ }
+  // v1.0.11 一次性自愈：旧版存在「顶部吸附」被误关导致小窗丢失的反馈，重新启用一次；
+  // 此后完全以用户在设置面板的选择为准（迁移标记 ver，只执行一次）
+  if (settings.ver !== 3) {
+    settings.ver = 3;
+    if (settings.edgeDock === false) settings.edgeDock = true;
+    persist();
+  }
   migrateLocations();
 }
 function persist(patch = {}) {
@@ -415,6 +422,8 @@ function createWindow() {
   win.once('ready-to-show', () => win.show());
   win.webContents.on('did-finish-load', () => { sendDockState(); if (settings.docked) setShapePill(); });
   if (startDocked) { hoverArmed = true; ensureHoverPoll(); }
+  // 启动自愈：窗口贴在屏幕顶端（比如上次拖到顶没吸附成功）→ 自动收起为温度小窗
+  if (!SHOT_MODE && !startDocked) setTimeout(checkSnap, 1200);
 
   // 渲染进程报错输出到控制台，便于排查
   win.webContents.on('console-message', (_e, level, message) => {
@@ -587,7 +596,8 @@ function createWindow() {
   }
 
   // --shot-update：OTA 更新链路自检（需配合 --update-url=http://127.0.0.1:port 假更新源）
-  // 验证：发现新版本横幅 → 点「立即更新」后台下载 → 「重启安装」提示；不真正安装
+  // 验证：发现新版本横幅 → 点「立即更新」后台下载 → 「重启安装」提示 → 「稍后」收起横幅；不真正安装
+  // 不带 --update-url= 时走「内置默认源」模式：点「检查更新」应得到真实结果而非「未配置」
   if (process.argv.includes('--shot-update')) {
     const shoot = async (name) => {
       const img = await win.webContents.capturePage();
@@ -597,8 +607,38 @@ function createWindow() {
     };
     setTimeout(async () => {
       try {
+        if (!process.argv.find(a => a.startsWith('--update-url='))) {
+          // 内置默认源模式：手动检查更新，状态必须落到实结果（非「未配置」）
+          await win.webContents.executeJavaScript(`document.getElementById("btnSettings").click()`);
+          await new Promise(r => setTimeout(r, 500));
+          await win.webContents.executeJavaScript(`document.getElementById("btnCheckUpdate").click()`);
+          const t0 = Date.now();
+          let st = '';
+          while (Date.now() - t0 < 20000) {
+            await new Promise(r => setTimeout(r, 800));
+            st = await win.webContents.executeJavaScript(`document.getElementById("updateStatus").textContent`);
+            if (st && st !== '正在检查更新…') break;
+          }
+          await shoot('u-d-status.png');
+          const ok = st && st !== '未配置更新服务器地址' && st !== '正在检查更新…';
+          console.log('[ota-shot] default source status:', JSON.stringify(st), ok ? 'PASS' : 'FAIL');
+          console.log('[ota-shot] DONE', ok ? 'PASS' : 'FAIL');
+          app.exit(0);
+          return;
+        }
         await shoot('u-1-available.png');   // 横幅应显示「发现新版本 v…（当前 v…）」
         console.log('[ota-shot] state after check:', JSON.stringify(updateState));
+        // 横幅内容自检：文本非空 + 主按钮可见
+        const b1 = await win.webContents.executeJavaScript(`(() => {
+          const b = document.getElementById('updateBanner');
+          const cs = getComputedStyle(b);
+          return JSON.stringify({
+            visible: cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.5,
+            text: document.getElementById('ubText').textContent.trim().length,
+            primary: !document.getElementById('ubPrimary').hidden
+          });
+        })()`);
+        console.log('[ota-shot] banner content', b1, (JSON.parse(b1).visible && JSON.parse(b1).text > 0 && JSON.parse(b1).primary) ? 'PASS' : 'FAIL');
         await win.webContents.executeJavaScript(`(document.getElementById('ubPrimary')||{click(){}}).click()`);
         // 等下载完成（假更新源在本机，86MB 一般 10~30 秒）
         const t0 = Date.now();
@@ -608,6 +648,17 @@ function createWindow() {
         }
         console.log('[ota-shot] final state:', JSON.stringify(updateState));
         await shoot('u-2-downloaded.png');  // 横幅应显示「更新已就绪，重启完成安装」
+        // 「稍后」自检：点后横幅应真正收起（且写入记忆不再弹）
+        await win.webContents.executeJavaScript(`(document.getElementById('ubLater')||{click(){}}).click()`);
+        await new Promise(r => setTimeout(r, 500));
+        const memKey = 'updDismiss_downloaded_' + String((updateState && updateState.version) || '');
+        const b2 = await win.webContents.executeJavaScript(`(() => {
+          const cs = getComputedStyle(document.getElementById('updateBanner'));
+          return JSON.stringify({ hidden: cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.1,
+            remembered: !!localStorage.getItem(${JSON.stringify(memKey)}) });
+        })()`);
+        await shoot('u-2b-dismissed.png');
+        console.log('[ota-shot] dismiss later', b2, (JSON.parse(b2).hidden && JSON.parse(b2).remembered) ? 'PASS' : 'FAIL');
         await win.webContents.executeJavaScript('document.getElementById("btnSettings").click()');
         await new Promise(r => setTimeout(r, 600));
         await shoot('u-3-settings.png');    // 设置页「软件更新」区块
@@ -722,7 +773,7 @@ function checkForUpdates(manual) {
   const url = effectiveUpdateUrl();
   if (!autoUpdater) { if (manual) sendUpdateState({ type: 'error', message: '更新组件未就绪' }); return; }
   if (!app.isPackaged && !cli) { if (manual) sendUpdateState({ type: 'error', message: '开发模式不支持在线更新' }); return; }
-  if (!url || (url === DEFAULT_UPDATE_URL && !cli)) {
+  if (!url) {
     otaLog('skip check: update url not configured');
     if (manual) sendUpdateState({ type: 'unconfigured' });
     return;
