@@ -23,6 +23,7 @@ const yml = [
 
 http.createServer((req, res) => {
   const u = req.url || '';
+  console.log('[fake-ota]', req.method, u); // 请求日志：排查更新链路时看请求是否到达
   if (u.includes('latest.yml')) {
     res.setHeader('content-type', 'text/yaml');
     res.end(yml);

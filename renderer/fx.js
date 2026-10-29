@@ -35,7 +35,7 @@ const FX = (() => {
   let skyToggle = false;
   function paintSky(date, group) {
     const h = date.getHours() + date.getMinutes() / 60;
-    night = (h < 6 || h >= 19);
+    // night 由 setMode(is_day) 统一决定（API 权威），这里不再按钟点猜测
     const p = PHASES[phaseOf(h)];
     const mood = MOOD[group] && group !== 'clear' ? MOOD[group] : null;
     const grad = `linear-gradient(180deg, ${p.join(', ')})`;
@@ -46,8 +46,8 @@ const FX = (() => {
     if (!a || !b) return;
     const [show, hide] = skyToggle ? [a, b] : [b, a];
     show.style.backgroundImage = overlay === 'none' ? grad : `${overlay}, ${grad}`;
-    // 与 #skyA 基准一致：只做 0.3 的极轻氛围染色，保持玻璃透明感
-    show.style.opacity = '0.3';
+    // 白天只做 0.3 的极轻氛围染色（保持玻璃透明感）；夜晚加深染色，压出星空暗色调
+    show.style.opacity = night ? '0.55' : '0.3';
     hide.style.opacity = '0';
     skyToggle = !skyToggle;
 

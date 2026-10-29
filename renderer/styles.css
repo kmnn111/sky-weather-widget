@@ -932,3 +932,155 @@ body.docked .update-banner { display: none !important; }
   .clock { font-size: 46px; }
   .hero-top { margin-right: 100px; }
 }
+
+/* ============================================================
+   夜色星空主题（body.night，日落后按 is_day 自动切换）
+   参考手机天气 App 的深蓝紫星空暗色调：整个界面入夜转暗、星点浮现。
+   主题切换只改颜色类属性（合成层过渡），不触碰布局；
+   .scrolling 性能兜底态禁过渡，避免拖慢滚动。白天平时零开销。
+   ============================================================ */
+body.night {
+  --ink: #e6ecfa;
+  --ink-soft: #98a6c8;
+  --paper: rgba(20, 27, 52, 0.8);
+  --paper-strong: rgba(15, 21, 42, 0.92);
+  --red: #f28b80;
+  --green: #93c47d;
+  --blue: #7db1ec;
+  --shadow: 0 14px 34px rgba(3, 6, 18, 0.5);
+}
+/* 夜色下整个窗口压上不透明深蓝紫底（白天保留玻璃透明感透出壁纸） */
+body.night #sky {
+  background: linear-gradient(180deg, #10172f 0%, #16203f 52%, #1e2a54 100%);
+}
+body.night .clouds i { opacity: 0.12; } /* 夜里的云只剩淡淡剪影 */
+
+/* 昼夜切换的平滑过渡（只动颜色，1.2s 缓动；滚动兜底态不走过渡，别拖慢滚动） */
+.card { transition: background-color 1.2s ease, border-color 1.2s ease, box-shadow 1.2s ease; }
+#widget.scrolling .card { transition: none; }
+.panel { transition: transform .34s cubic-bezier(.2, .8, .25, 1), opacity .3s, background-color 1.2s ease, border-color 1.2s ease; }
+.update-banner { transition: opacity .32s cubic-bezier(.32, .72, 0, 1), transform .32s cubic-bezier(.32, .72, 0, 1), visibility 0s .32s, background-color 1.2s ease, border-color 1.2s ease; }
+.update-banner.show { transition: opacity .32s cubic-bezier(.32, .72, 0, 1), transform .32s cubic-bezier(.32, .72, 0, 1), visibility 0s, background-color 1.2s ease, border-color 1.2s ease; }
+#pill { transition: opacity .22s ease, transform .22s ease, visibility 0s .22s, background-color 1.2s ease, border-color 1.2s ease; }
+
+/* ---- 大面：卡片 / 头部 / 小窗 / 设置面板 / 更新横幅 ---- */
+body.night .card {
+  background: rgba(24, 32, 62, 0.58);
+  border-color: rgba(165, 190, 240, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(210, 225, 250, 0.1),
+    inset 0 -1px 0 rgba(210, 225, 250, 0.05),
+    0 16px 40px rgba(2, 6, 18, 0.45);
+}
+body.night #widget.scrolling .card { background: rgba(22, 30, 58, 0.74); }
+body.night .hero { background: linear-gradient(150deg, rgba(32, 42, 82, 0.62), rgba(22, 30, 58, 0.5)); }
+body.night #widget.scrolling .hero { background: linear-gradient(150deg, rgba(30, 38, 72, 0.8), rgba(24, 30, 58, 0.66)); }
+body.night #pill {
+  background: linear-gradient(150deg, rgba(26, 34, 64, 0.72), rgba(20, 28, 54, 0.6));
+  border-color: rgba(170, 195, 240, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(210, 225, 250, 0.12),
+    inset 0 -1px 0 rgba(210, 225, 250, 0.06),
+    0 14px 36px rgba(2, 6, 18, 0.42);
+}
+body.night.docked:not(.expanded) #pill {
+  box-shadow: inset 0 -1px 0 rgba(210, 225, 250, 0.1);
+}
+body.night .pill-time, body.night .pill-temp,
+body.night .clock, body.night .now-temp { color: #f2f5fd; }
+body.night .panel {
+  background: rgba(18, 26, 52, 0.86);
+  border-color: rgba(170, 195, 240, 0.22);
+  box-shadow: inset 0 1px 0 rgba(210, 225, 250, 0.1), 0 16px 40px rgba(2, 6, 18, 0.5);
+}
+body.night .update-banner {
+  background: rgba(22, 30, 58, 0.93);
+  border-color: rgba(170, 195, 240, 0.25);
+  box-shadow: inset 0 1px 0 rgba(210, 225, 250, 0.1), 0 12px 32px rgba(2, 6, 18, 0.5);
+}
+body.night #frame::after {
+  border-color: rgba(170, 195, 240, 0.22);
+  box-shadow: inset 0 1px 0 rgba(210, 225, 250, 0.12);
+}
+
+/* ---- 控件：按钮 / 输入 / 选项 / 芯片 ---- */
+body.night .icon-btn {
+  background: rgba(160, 185, 235, 0.16);
+  border-color: rgba(190, 210, 245, 0.28);
+}
+body.night .icon-btn:hover { background: rgba(170, 195, 240, 0.3); }
+body.night .chip {
+  background: rgba(150, 175, 230, 0.14);
+  border-color: rgba(190, 210, 245, 0.22);
+}
+body.night .pill-btn.ghost {
+  background: rgba(150, 175, 230, 0.16);
+  border-color: rgba(190, 210, 245, 0.3);
+}
+body.night .search-row input,
+body.night .select,
+body.night .update-url-row input {
+  background: rgba(140, 165, 225, 0.14);
+  border-color: rgba(180, 200, 240, 0.22);
+  color: var(--ink);
+}
+body.night input::placeholder { color: rgba(150, 165, 200, 0.6); }
+body.night .wide-btn { color: #a8d2f0; }
+body.night .wide-btn.danger { color: #ffb0a6; }
+body.night .cat-chip { background: rgba(150, 175, 230, 0.16); }
+body.night .check input { accent-color: var(--sun); }
+
+/* ---- 内容块：逐时 / 七日 / 万年历 / 生活 / 地点列表 ---- */
+body.night .h-item, body.night .hr-item {
+  background: rgba(150, 175, 230, 0.12);
+  border-color: rgba(190, 210, 245, 0.2);
+}
+body.night .h-item.now { background: rgba(242, 169, 59, 0.22); }
+body.night .hr-item.now { background: rgba(242, 169, 59, 0.22); }
+body.night .d-row { border-bottom-color: rgba(190, 210, 245, 0.1); }
+body.night .d-bar { background: rgba(190, 210, 245, 0.14); }
+body.night .aqi-bar-fill { box-shadow: 0 0 0 1.5px rgba(10, 16, 36, 0.55); }
+body.night .life-item { border-bottom-color: rgba(190, 210, 245, 0.12); }
+body.night .alm-cell {
+  background: rgba(150, 175, 230, 0.1);
+}
+body.night .alm-cell:hover { background: rgba(160, 185, 235, 0.24); }
+body.night .alm-cell.sel { background: rgba(242, 169, 59, 0.26); }
+body.night .alm-cell.today { background: rgba(255, 180, 120, 0.22); }
+body.night .alm-detail {
+  background: rgba(28, 36, 68, 0.55);
+  border-color: rgba(190, 210, 245, 0.2);
+}
+body.night .chip-y { color: #b8e39c; }
+body.night .chip-j { color: #ffb3a8; }
+body.night .alert.orange { color: #ffd9a0; }
+body.night .alert.blue { color: #b9d8ff; }
+body.night .alert.red { color: #ffc4bd; }
+body.night .alert.green { color: #c6e8ae; }
+body.night .lucky-item { background: rgba(150, 175, 230, 0.12); }
+body.night .loc-bar { border-top-color: rgba(180, 200, 240, 0.16); }
+body.night .s-item, body.night .loc-item {
+  background: rgba(150, 175, 230, 0.13);
+  border-color: rgba(190, 210, 245, 0.2);
+}
+body.night .loc-item.active { border-color: var(--sun); background: rgba(242, 169, 59, 0.16); }
+body.night .foot {
+  color: rgba(190, 205, 235, 0.7);
+  text-shadow: 0 1px 0 rgba(10, 16, 36, 0.4);
+}
+
+/* ---- 昼夜地球卡片 ---- */
+body.night .g-tile {
+  background: rgba(150, 175, 230, 0.12);
+  border-color: rgba(190, 210, 245, 0.2);
+}
+body.night #gState { background: rgba(250, 200, 120, 0.2); color: #ffd9a0; border-color: rgba(250, 200, 120, 0.35); }
+body.night #gCountdown { background: rgba(140, 190, 250, 0.18); color: #b9dcff; border-color: rgba(150, 195, 240, 0.35); }
+body.night #gDaylen, body.night #gNoon { background: rgba(200, 215, 245, 0.12); color: #c9d4ec; border-color: rgba(200, 215, 245, 0.22); }
+body.night .g-bar { background: rgba(190, 210, 245, 0.16); }
+
+/* ---- 滚动条 ---- */
+body.night ::-webkit-scrollbar-thumb { background: rgba(180, 196, 232, 0.28); }
+body.night ::-webkit-scrollbar-thumb:hover { background: rgba(180, 196, 232, 0.45); }
+body.night .hourly-scroll::-webkit-scrollbar-thumb,
+body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232, 0.22); }

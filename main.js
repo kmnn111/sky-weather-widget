@@ -3,7 +3,7 @@
  * 云上晴雨 - 宫崎骏风格 Windows 桌面天气插件
  * Electron 主进程：无边框透明窗体 / 置顶 / 托盘 / 位置记忆 / 数据接口代理
  */
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, desktopCapturer, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -14,7 +14,7 @@ if (SHOT_MODE) {
 }
 
 // 网络抓取（网络层故障自动重试）/ 地名解析 / 地点搜索（Nominatim + Open-Meteo 双源兜底）
-const { got, parseNominatim, searchPlaces, friendlyNetError } = require('./geo.js');
+const { got, clean, parseNominatim, searchPlaces, friendlyNetError } = require('./geo.js');
 
 /* ---------------- 设置持久化 ---------------- */
 let win = null;
@@ -256,27 +256,46 @@ function registerIpc() {
 
   ipcMain.handle('geo:iplocate', async () => {
     // IP 定位 -> 坐标 -> 逆地理编码成中文地名（精确到区县/街道）
-    let lat, lon, fallbackName = '';
+    // ip-api 带 district 字段：反查失败或结果过粗（只到地级市）时用区县名兜底精化
+    let lat, lon, region = '', city = '', district = '';
     try {
-      const r = await got('http://ip-api.com/json/?lang=zh-CN&fields=status,country,regionName,city,lat,lon', 10000);
-      if (r.status === 'success') { lat = r.lat; lon = r.lon; fallbackName = r.city || r.regionName || ''; }
+      const r = await got('http://ip-api.com/json/?lang=zh-CN&fields=status,country,regionName,city,district,lat,lon', 10000);
+      if (r.status === 'success') {
+        lat = r.lat; lon = r.lon;
+        region = r.regionName || ''; city = r.city || ''; district = r.district || '';
+      }
     } catch (e) { }
     if (!Number.isFinite(lat)) {
       try {
         const r = await got('https://ipwho.is/?lang=zh', 10000);
-        if (r.success) { lat = r.latitude; lon = r.longitude; fallbackName = r.city || ''; }
+        if (r.success) { lat = r.latitude; lon = r.longitude; city = r.city || ''; }
       } catch (e) { }
     }
     if (!Number.isFinite(lat)) return { error: '无法获取网络定位' };
+    const fallbackName = district || city || region;
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=zh&zoom=16&addressdetails=1&lat=${lat}&lon=${lon}`;
       const r = await got(url, 15000);
       const parsed = parseNominatim(r);
       if (!parsed.detail && fallbackName) parsed.detail = fallbackName;
+      // 反查结果过粗（主名只到地级市/省份）→ 用 IP 的区县名精化主名，别停在「宁波」级
+      const nm = clean(parsed.name), coarse = !nm || nm === clean(city) || nm === clean(region);
+      if (coarse && district) {
+        parsed.name = clean(district);
+        if (!parsed.parent && city) parsed.parent = clean(city);
+      }
       parsed.auto = true;
       return parsed;
     } catch (err) {
-      return { name: fallbackName || '当前位置', parent: '', detail: '', admin1: '', lat, lon, auto: true, display: fallbackName };
+      // 反查失败：用 IP 的 省/市/区县 三级链兜底（名称优先取区县）
+      return {
+        name: clean(fallbackName) || '当前位置',
+        parent: clean(city) !== clean(fallbackName) ? clean(city) : '',
+        detail: '',
+        admin1: clean(region),
+        lat, lon, auto: true,
+        display: [region, city, district].filter(Boolean).join(' · ')
+      };
     }
   });
 
@@ -360,7 +379,13 @@ function createWindow() {
   win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.show());
-  win.webContents.on('did-finish-load', () => { sendDockState(); if (settings.docked) setShapePill(); });
+  win.webContents.on('did-finish-load', () => {
+    sendDockState(); if (settings.docked) setShapePill();
+    // 更新自检要求横幅每次都真弹：清掉历史运行残留的「稍后」记忆，保证可复现
+    if (process.argv.includes('--shot-update')) {
+      win.webContents.executeJavaScript('Object.keys(localStorage).filter(k => k.indexOf("updDismiss_") === 0).forEach(k => localStorage.removeItem(k))').catch(() => { });
+    }
+  });
   if (startDocked) { hoverArmed = true; ensureHoverPoll(); }
   // 启动自愈：窗口贴在屏幕顶端（比如上次拖到顶没吸附成功）→ 自动收起为温度小窗
   if (!SHOT_MODE && !startDocked) setTimeout(checkSnap, 1200);
@@ -402,6 +427,30 @@ function createWindow() {
           return { before, after: el.scrollLeft, max: el.scrollWidth - el.clientWidth };
         })()`);
         console.log('[drag-test]', JSON.stringify(dragRes), dragRes.after > dragRes.before ? 'PASS' : 'FAIL');
+        // ---- v1.0.15 新增自检：夜色主题 / IME 搜索守卫 / 设置页更新按钮 ----
+        // 夜色主题：白天跑 --shot 也能验证夜间版式（强制 body.night 抓帧后还原）
+        await win.webContents.executeJavaScript('document.body.classList.add("night")');
+        await new Promise(r => setTimeout(r, 1500));
+        await shoot('shot-13-night.png');
+        await win.webContents.executeJavaScript('document.getElementById("widget").scrollTop = 999999');
+        await new Promise(r => setTimeout(r, 800));
+        await shoot('shot-14-night-bottom.png');
+        await win.webContents.executeJavaScript('document.body.classList.remove("night"); document.getElementById("widget").scrollTop = 0');
+        await new Promise(r => setTimeout(r, 600));
+        // IME 守卫：中文输入法确认候选词的 Enter（isComposing）不得触发搜索；普通 Enter 必须触发
+        const imeRes = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const inp = document.getElementById('searchInput');
+          const box = document.getElementById('searchResults');
+          box.innerHTML = ''; inp.value = '慈溪';
+          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }));
+          return new Promise(r => setTimeout(() => {
+            const guarded = box.innerHTML.trim() === '';
+            inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            setTimeout(() => r(JSON.stringify({ guarded, started: box.innerHTML.indexOf('搜索中') !== -1 || box.innerHTML.indexOf('s-item') !== -1 })), 150);
+          }, 500));
+        })()`));
+        console.log('[ime-test] composing-Enter ignored:', imeRes.guarded, imeRes.guarded ? 'PASS' : 'FAIL');
+        console.log('[ime-test] real-Enter fired search:', imeRes.started, imeRes.started ? 'PASS' : 'FAIL');
         // shot-6/7/8：真实桌面视角验证吸顶小窗（收起 / 展开 / 再收起）
         const shootDesktop = async (name) => {
           const srcs = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1600, height: 900 } });
@@ -618,8 +667,15 @@ function createWindow() {
         console.log('[ota-shot] dismiss later', b2, (JSON.parse(b2).hidden && JSON.parse(b2).remembered) ? 'PASS' : 'FAIL');
         await win.webContents.executeJavaScript('document.getElementById("btnSettings").click()');
         await new Promise(r => setTimeout(r, 600));
-        await shoot('u-3-settings.png');    // 设置页「软件更新」区块
-        console.log('[ota-shot] DONE', updateState.type === 'downloaded' ? 'PASS' : 'FAIL');
+        await shoot('u-3-settings.png');    // 设置页「软件更新」区块（应含「立即重启」动作按钮）
+        // 设置页更新动作按钮自检：downloaded 态应可见且文案为「立即重启」
+        const du = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const b = document.getElementById('btnDoUpdate');
+          return JSON.stringify({ hidden: b.hidden, text: b.textContent.trim() });
+        })()`));
+        const duOk = !du.hidden && du.text === '立即重启';
+        console.log('[ota-shot] settings update button', JSON.stringify(du), duOk ? 'PASS' : 'FAIL');
+        console.log('[ota-shot] DONE', (updateState.type === 'downloaded' && duOk) ? 'PASS' : 'FAIL');
       } catch (e) { console.error('[shot] failed', e); }
       app.exit(0);
     }, 8000);
@@ -673,6 +729,7 @@ const DEFAULT_UPDATE_URL = 'https://github.com/kmnn111/sky-weather-widget/releas
 let autoUpdater = null;
 let updateState = { type: 'idle' };
 let updateTimer = null;
+let checkWatchdog = null; // 检查看门狗：网络异常时更新请求可能永远挂起不回调，超时收场别让界面一直转圈
 
 function otaLog(...args) {
   console.log('[ota]', ...args);
@@ -691,8 +748,33 @@ function effectiveUpdateUrl() {
   return String(url || '').trim().replace(/\/+$/, '');
 }
 
+// 系统推送通知：吸顶小窗看不到更新横幅，发现新版本/更新就绪时发系统通知（每版本每类型只推一次）
+const notifiedUpdate = { available: '', downloaded: '' };
+function pushNotify(title, body) {
+  try {
+    if (SHOT_MODE || !Notification.isSupported()) return;
+    const n = new Notification({ title, body });
+    n.on('click', () => {
+      if (win && !win.isDestroyed()) {
+        win.show();
+        if (win.isMinimized()) win.restore();
+        win.focus();
+      }
+    });
+    n.show();
+  } catch (e) { otaLog('notify failed', String(e)); }
+}
+
 function sendUpdateState(s) {
+  if (checkWatchdog) { clearTimeout(checkWatchdog); checkWatchdog = null; } // 有任何状态推进 = 请求活着
   updateState = s;
+  if (s && s.type === 'available' && s.version && notifiedUpdate.available !== s.version) {
+    notifiedUpdate.available = s.version;
+    pushNotify('云上晴雨有新版本 v' + s.version, '当前 v' + (s.current || app.getVersion()) + '，点击打开并更新');
+  } else if (s && s.type === 'downloaded' && s.version && notifiedUpdate.downloaded !== s.version) {
+    notifiedUpdate.downloaded = s.version;
+    pushNotify('新版本 v' + s.version + ' 已就绪', '点击打开，重启后完成安装');
+  }
   if (win && !win.isDestroyed()) win.webContents.send('update:state', s);
 }
 
@@ -700,6 +782,9 @@ function setupAutoUpdate() {
   try {
     const { autoUpdater: au } = require('electron-updater');
     autoUpdater = au;
+    // electron-updater 6.x 未打包时 checkForUpdates 静默 resolve(null)（无事件、无请求）：
+    // 开发/自检态强制启用，让 --shot-update 假源链路真实跑通（打包版不受影响）
+    if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true;
     autoUpdater.autoDownload = false;        // 下载需用户点「立即更新」
     autoUpdater.autoInstallOnAppQuit = false; // 安装需用户确认重启
     autoUpdater.on('checking-for-update', () => otaLog('checking'));
@@ -727,9 +812,10 @@ function setupAutoUpdate() {
 
 function checkForUpdates(manual) {
   const cli = process.argv.find(a => a.startsWith('--update-url='));
+  const testing = !!cli || process.argv.includes('--shot-update'); // 自检模式：开发态也真跑更新链路
   const url = effectiveUpdateUrl();
   if (!autoUpdater) { if (manual) sendUpdateState({ type: 'error', message: '更新组件未就绪' }); return; }
-  if (!app.isPackaged && !cli) { if (manual) sendUpdateState({ type: 'error', message: '开发模式不支持在线更新' }); return; }
+  if (!app.isPackaged && !testing) { if (manual) sendUpdateState({ type: 'error', message: '开发模式不支持在线更新' }); return; }
   if (!url) {
     otaLog('skip check: update url not configured');
     if (manual) sendUpdateState({ type: 'unconfigured' });
@@ -738,11 +824,24 @@ function checkForUpdates(manual) {
   try {
     autoUpdater.setFeedURL({ provider: 'generic', url });
     otaLog('checking', url);
+    // 看门狗：更新请求可能被坏代理/网络挂死（不回调、不报错），25 秒无状态推进按超时收场
+    if (checkWatchdog) clearTimeout(checkWatchdog);
+    checkWatchdog = setTimeout(() => {
+      checkWatchdog = null;
+      otaLog('check timeout');
+      sendUpdateState({ type: 'error', message: '检查超时，请检查网络后重试' });
+    }, 25000);
     const p = autoUpdater.checkForUpdates();
-    if (p && p.catch) p.catch(err => { const msg = String((err && err.message) || err); otaLog('check error', msg); if (manual) sendUpdateState({ type: 'error', message: msg }); });
+    if (p && p.catch) p.catch(err => {
+      const msg = String((err && err.message) || err);
+      otaLog('check error', msg);
+      if (checkWatchdog) { clearTimeout(checkWatchdog); checkWatchdog = null; }
+      if (manual) sendUpdateState({ type: 'error', message: msg });
+    });
   } catch (e) {
     const msg = String((e && e.message) || e);
     otaLog('check threw', msg);
+    if (checkWatchdog) { clearTimeout(checkWatchdog); checkWatchdog = null; }
     if (manual) sendUpdateState({ type: 'error', message: msg });
   }
 }

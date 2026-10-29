@@ -62,11 +62,13 @@
     const w = state.data && state.data.weather;
     const group = w ? Weather.codeInfo(w.current.weather_code, w.current.is_day).group : 'clear';
     const isDay = w ? !!w.current.is_day : (now.getHours() > 6 && now.getHours() < 19);
-    FX.paintSky(now, group === 'clear' ? 'clear' : group);
+    // setMode 统一设置 night（is_day 权威）并重绘天空，paintSky 不再按钟点猜昼夜
+    FX.setMode(group, isDay, now);
     if (w) {
       FX.placeCelestial(w.daily.sunrise[0], w.daily.sunset[0]);
     }
-    FX.setMode(group, isDay);
+    // 日落后整个界面切换到星空/黑夜暗色调（body.night 覆盖主题变量，纯 CSS 过渡）
+    document.body.classList.toggle('night', !isDay);
   }
 
   /* ================= 天气渲染 ================= */
@@ -99,7 +101,8 @@
     $('alertWrap').innerHTML = alerts.map(a =>
       `<div class="alert ${a.tone}"><span class="dot"></span><span>${esc(a.text)}</span></div>`).join('');
 
-    $('locText').textContent = locLine(state.loc);
+    // 标题主打区县名（如「慈溪」），完整地址链（含街道）放到下方 detail 行
+    $('locText').textContent = state.loc.name || locLine(state.loc);
     // detail 通常已包含在 display 的地址链里，先去重再拼接，避免"慈溪市 · 慈溪市 · …"
     const disp = state.loc.display || '';
     const dt = state.loc.detail || '';
@@ -487,6 +490,14 @@
     b.classList.add('show');
   }
 
+  // 设置页更新动作按钮：发现新版本→「立即更新」（下载）；下载完成→「立即重启」（安装）
+  function setDoUpdate(label) {
+    const b = $('btnDoUpdate');
+    if (!b) return;
+    if (label) { b.hidden = false; b.textContent = label; b.disabled = false; }
+    else b.hidden = true;
+  }
+
   function onUpdateState(s) {
     if (!s || !s.type) return;
     lastUpdateState = s;
@@ -495,6 +506,7 @@
       case 'available':
         manualCheck = false;
         setUpdateStatus(`发现新版本 v${esc(s.version)}`);
+        setDoUpdate('立即更新');
         if (!localStorage.getItem(dismissedKey('available', s.version))) {
           showUpdateBanner(`发现新版本 <span class="nb"><b>v${esc(s.version)}</b>（当前 ${cur}）</span>`, '立即更新', true);
         }
@@ -504,9 +516,11 @@
         $('ubText').innerHTML = `正在下载更新… <b>${s.percent || 0}%</b>`;
         $('ubPrimary').hidden = true;
         setUpdateStatus(`正在下载 ${s.percent || 0}%`);
+        setDoUpdate(null);
         break;
       case 'downloaded':
         setUpdateStatus('更新已就绪，重启后安装');
+        setDoUpdate('立即重启');
         if (!localStorage.getItem(dismissedKey('downloaded', s.version))) {
           showUpdateBanner(`<span class="nb">新版本 <b>v${esc(s.version)}</b></span> 已就绪，<span class="nb">重启后完成安装</span>`, '立即重启', true);
         }
@@ -514,14 +528,17 @@
       case 'up-to-date':
         if (manualCheck) setUpdateStatus(`已是最新版本（${cur}）`);
         manualCheck = false;
+        setDoUpdate(null);
         break;
       case 'unconfigured':
         if (manualCheck) setUpdateStatus('未配置更新服务器地址');
         manualCheck = false;
+        setDoUpdate(null);
         break;
       case 'error':
         if (manualCheck) setUpdateStatus('检查失败：' + esc(s.message || '未知错误'));
         manualCheck = false;
+        setDoUpdate(null);
         break;
     }
   }
@@ -554,7 +571,11 @@
     });
 
     $('btnSearch').addEventListener('click', doSearch);
-    $('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+    // IME 守卫：中文输入法确认候选词的 Enter（isComposing/keyCode 229）不能触发搜索，
+    // 否则会拿未完成的拼音提前搜索（搜「ci」而不是「慈溪」）导致"搜不出区县市"
+    $('searchInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) doSearch();
+    });
 
     $('btnAutoLocate').addEventListener('click', async () => {
       $('btnAutoLocate').textContent = '正在定位…';
@@ -597,6 +618,12 @@
     $('ubPrimary').addEventListener('click', () => {
       const s = lastUpdateState || {};
       if (s.type === 'available') sky.updateDownload();
+      else if (s.type === 'downloaded') sky.updateInstall();
+    });
+    // 设置页的更新动作按钮与横幅主按钮同逻辑（点击后立即禁用，防连点重复触发下载）
+    $('btnDoUpdate').addEventListener('click', () => {
+      const s = lastUpdateState || {};
+      if (s.type === 'available') { $('btnDoUpdate').disabled = true; sky.updateDownload(); }
       else if (s.type === 'downloaded') sky.updateInstall();
     });
     $('ubLater').addEventListener('click', dismissUpdateBanner);
