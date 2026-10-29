@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self'" />
+  <title>云上晴雨</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ======== 圆角玻璃轮廓：所有内容裁进圆角矩形，外轮廓只有圆弧 ======== -->
+  <div id="frame">
+  <!-- ======== 天空氛围层 ======== -->
+  <div id="sky">
+    <div id="skyA"></div>
+    <div id="skyB"></div>
+    <div id="stars"></div>
+    <div id="sun"></div>
+    <div id="moon"></div>
+    <div class="clouds"><i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i></div>
+  </div>
+  <canvas id="fx"></canvas>
+
+  <!-- ======== 吸顶温度小窗（拖到屏幕顶端自动收起，悬停展开完整插件） ======== -->
+  <div id="pill">
+    <div class="pill-grip drag" title="按住拖动（拖离顶部即可退出吸顶）"><div class="pill-ico" id="pillIcon"></div></div>
+    <div class="pill-mid">
+      <div class="pill-time"><span id="pillTime">--:--</span><em class="clk-sec" id="pillSec">00</em></div>
+      <div class="pill-date" id="pillDate"></div>
+      <div class="pill-sub" id="pillSub"></div>
+    </div>
+    <div class="pill-temp"><span id="pillTemp">--</span><em>°</em></div>
+  </div>
+
+  <!-- ======== 组件内容 ======== -->
+  <main id="widget">
+
+    <!-- 头部：时间 + 实况天气 -->
+    <header class="card hero">
+      <div class="hero-top drag">
+        <div class="time-block">
+          <div class="clock"><span id="clockHM">--:--</span><em class="clk-sec" id="clockSec">00</em></div>
+          <div class="date-line" id="dateLine">正在加载…</div>
+          <div class="lunar-line" id="lunarLine"></div>
+          <div class="src-line" id="srcLine" title="天气/空气质量：Open-Meteo · 地名：OpenStreetMap">正在获取数据…</div>
+        </div>
+        <div class="now-block">
+          <div class="now-icon" id="nowIcon"></div>
+          <div class="now-temp"><span id="tempNow">--</span><em>°</em></div>
+          <div class="now-cond" id="condText">--</div>
+          <div class="now-range" id="tempRange"></div>
+        </div>
+      </div>
+
+      <div class="alert-wrap" id="alertWrap"></div>
+      <div class="stat-row" id="statRow"></div>
+
+      <div class="loc-bar no-drag">
+        <div class="loc-pin"><span data-ui="pin"></span></div>
+        <div class="loc-texts">
+          <div class="loc-text" id="locText">正在定位…</div>
+          <div class="loc-detail" id="locDetail"></div>
+        </div>
+        <button class="pill-btn" id="btnSwitchLoc">切换地点</button>
+        <button class="pill-btn ghost" id="btnRefresh"><span class="btn-ico" data-ui="refresh"></span>刷新</button>
+      </div>
+
+      <!-- 窗口按钮必须放在拖拽区(hero-top)之后：Electron 按 DOM 顺序计算可拖拽区域 -->
+      <div class="win-actions no-drag">
+        <button class="icon-btn" id="btnPin" title="窗口置顶"><span data-ui="pin"></span></button>
+        <button class="icon-btn" id="btnSettings" title="设置与地点"><span data-ui="sliders"></span></button>
+        <button class="icon-btn" id="btnClose" title="隐藏到托盘（托盘里可退出）"><span data-ui="close"></span></button>
+      </div>
+    </header>
+
+    <!-- 昼夜地球：真实大陆轮廓随恒星时旋转，晨昏线分隔昼夜 -->
+    <section class="card">
+      <div class="card-title">昼夜地球 <em class="sub" id="globeSub"></em><button class="pill-btn sm" id="globeMode">真实自转</button></div>
+      <div id="globeMount"></div>
+    </section>
+
+    <!-- 逐 3 小时 -->
+    <section class="card">
+      <div class="card-title">逐时预报 <em class="sub" id="hourlySub"></em></div>
+      <div class="hourly-scroll" id="hourlyScroll"></div>
+    </section>
+
+    <!-- 7 天预报 -->
+    <section class="card">
+      <div class="card-title">七日预报</div>
+      <div class="daily-list" id="dailyList"></div>
+    </section>
+
+    <!-- 空气质量 + 生活指数 -->
+    <section class="duo">
+      <div class="card aqi-card">
+        <div class="card-title">空气质量</div>
+        <div class="aqi-main">
+          <div class="aqi-num" id="aqiNum">--</div>
+          <div class="aqi-side">
+            <div class="aqi-level" id="aqiLevel">--</div>
+            <div class="aqi-primary" id="aqiPrimary"></div>
+          </div>
+        </div>
+        <div class="aqi-bar"><div class="aqi-bar-fill" id="aqiBarFill"></div></div>
+        <div class="aqi-grid" id="aqiGrid"></div>
+      </div>
+
+      <div class="card life-card">
+        <div class="card-title">生活指南</div>
+        <div class="life-list" id="lifeList"></div>
+      </div>
+    </section>
+
+    <!-- 万年历 -->
+    <section class="card almanac">
+      <div class="alm-head">
+        <div class="card-title">万年历 <em class="sub" id="almSub">择吉 · 宜忌</em></div>
+        <div class="alm-nav">
+          <button class="icon-btn sm" id="prevMonth">‹</button>
+          <span class="month-label" id="monthLabel">--</span>
+          <button class="icon-btn sm" id="nextMonth">›</button>
+          <button class="pill-btn sm" id="todayBtn">今天</button>
+        </div>
+      </div>
+
+      <div class="alm-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+      <div class="alm-grid" id="almGrid"></div>
+
+      <div class="alm-detail" id="almDetail"></div>
+      <div class="alm-hours-wrap">
+        <div class="mini-title">今日时辰吉凶</div>
+        <div class="alm-hours" id="almHours"></div>
+      </div>
+
+      <div class="alm-lucky">
+        <div class="mini-title">本月吉日 · 良辰吉日</div>
+        <div class="cat-chips" id="catChips"></div>
+        <div class="lucky-list" id="luckyList"></div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span id="footText">天气数据 Open-Meteo · 地名 OpenStreetMap · 老黄历 lunar-javascript</span>
+    </footer>
+  </main>
+  </div>
+
+  <!-- ======== 更新提醒横幅 ======== -->
+  <div id="updateBanner" class="update-banner" hidden>
+    <div class="ub-text" id="ubText"></div>
+    <div class="ub-actions">
+      <button class="pill-btn sm" id="ubPrimary"></button>
+      <button class="pill-btn sm ghost" id="ubLater">稍后</button>
+    </div>
+  </div>
+
+  <!-- ======== 设置面板 ======== -->
+  <div id="settingsPanel" class="panel">
+    <div class="panel-head">
+      <span>设置与地点</span>
+      <button class="icon-btn sm" id="closeSettings"><span data-ui="close"></span></button>
+    </div>
+    <div class="panel-body">
+      <h4>搜索并添加地点</h4>
+      <div class="search-row">
+        <input id="searchInput" placeholder="输入城市 / 区县，例如：慈溪" />
+        <button class="pill-btn" id="btnSearch">搜索</button>
+      </div>
+      <div id="searchResults" class="search-results"></div>
+      <button class="wide-btn" id="btnAutoLocate"><span data-ui="pin"></span>使用当前位置（自动定位）</button>
+
+      <h4>我的地点</h4>
+      <div id="locList" class="loc-list"></div>
+
+      <h4>更新频率</h4>
+      <select id="refreshSelect" class="select">
+        <option value="5">每 5 分钟</option>
+        <option value="10">每 10 分钟</option>
+        <option value="30">每 30 分钟</option>
+        <option value="60">每 60 分钟</option>
+      </select>
+
+      <h4>窗口</h4>
+      <label class="check"><input type="checkbox" id="chkTop" /> 窗口置顶显示</label>
+      <label class="check"><input type="checkbox" id="chkAuto" /> 开机自动启动</label>
+      <label class="check"><input type="checkbox" id="chkEdgeDock" /> 顶部吸附（拖到屏幕顶端收起为温度小窗，悬停展开）</label>
+
+      <button class="wide-btn danger" id="btnQuit">退出程序</button>
+
+      <h4>软件更新</h4>
+      <div class="update-row">
+        <button class="pill-btn" id="btnCheckUpdate">检查更新</button>
+        <span class="update-status" id="updateStatus">—</span>
+      </div>
+      <div class="update-url-row">
+        <input id="updateUrlInput" placeholder="更新服务器地址（HTTP/HTTPS）" />
+        <button class="pill-btn" id="btnSaveUpdateUrl">保存</button>
+      </div>
+
+      <h4>关于</h4>
+      <div class="about">
+        <div class="about-name">云上晴雨天气台 <em id="panelVersion"></em></div>
+        <div class="about-author">作者：大软子哥哥</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/lunar.js"></script>
+  <script src="icons.js"></script>
+  <script src="weather.js"></script>
+  <script src="lunar.js"></script>
+  <script src="fx.js"></script>
+  <script src="globe.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

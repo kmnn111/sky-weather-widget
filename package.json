@@ -1,0 +1,67 @@
+{
+  "name": "sky-weather-widget",
+  "productName": "云上晴雨",
+  "version": "1.0.9",
+  "description": "云上晴雨 - 宫崎骏风格 Windows 桌面天气插件：透明无边框沉浸式，动态天气、空气质量、穿衣出行建议、万年历宜忌吉日",
+  "main": "main.js",
+  "author": "大软子哥哥",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "png-to-ico": "^2.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "lunar-javascript": "^1.6.12"
+  },
+  "build": {
+    "appId": "com.skyweather.widget",
+    "productName": "云上晴雨",
+    "copyright": "Copyright © 2026 SkyWeather Studio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/kmnn111/sky-weather-widget/releases/latest/download"
+      }
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "云上晴雨天气",
+      "artifactName": "云上晴雨天气台-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    }
+  }
+}

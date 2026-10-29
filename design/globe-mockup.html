@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>地球昼夜动画 · 设计稿 v2</title>
+<style>
+:root{
+  --color-background-primary:#ffffff;
+  --color-background-secondary:#f6f5f2;
+  --color-background-tertiary:#fafaf9;
+  --color-text-primary:#2c2c2a;
+  --color-text-secondary:#5f5e5a;
+  --color-text-tertiary:#888780;
+  --color-border-tertiary:rgba(0,0,0,0.15);
+  --font-sans:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+body{background:var(--color-background-tertiary);margin:0;padding:32px 16px;font-family:var(--font-sans);}
+.page{max-width:780px;margin:0 auto;}
+.page h1{font-size:15px;font-weight:500;color:var(--color-text-primary);margin:0 0 4px;}
+.page .sub{font-size:12px;color:var(--color-text-tertiary);margin:0 0 16px;line-height:1.7;}
+.frame{background:var(--color-background-secondary);border-radius:16px;padding:22px;}
+.label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:10px;}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:16px;padding:18px 20px;}
+.card-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;}
+.card-head b{font-size:14px;font-weight:500;color:var(--color-text-primary);}
+.card-head span{font-size:12px;color:var(--color-text-tertiary);}
+.card-body{display:flex;gap:20px;align-items:center;flex-wrap:wrap;}
+.scene{background:#eef4fb;border-radius:16px;padding:6px;flex:0 0 auto;}
+.col2{flex:1;min-width:210px;max-width:265px;}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.tile{background:var(--color-background-secondary);border-radius:12px;padding:10px 12px;}
+.tile .t{font-size:11px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:5px;}
+.tile .v{font-size:20px;font-weight:500;color:var(--color-text-primary);line-height:1.35;}
+.bar{position:relative;height:8px;background:#e3e0d8;border-radius:99px;margin:26px 0 8px;}
+.bar .fill{position:absolute;left:0;top:0;height:8px;width:29%;background:#f2b34c;border-radius:99px;}
+.bar .now{position:absolute;left:calc(29% - 8px);top:-6px;width:20px;height:20px;border-radius:99px;background:#f0625a;border:3px solid var(--color-background-primary);}
+.bar .lab{position:absolute;left:29%;top:17px;transform:translateX(-50%);font-size:11px;color:var(--color-text-tertiary);white-space:nowrap;}
+.bar-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--color-text-tertiary);margin-top:16px;}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.chip{font-size:12px;padding:4px 10px;border-radius:999px;background:#faeeda;color:#854f0b;}
+.chip.cool{background:#e6f1fb;color:#185fa5;}
+.chip.gray{background:#f1efe8;color:#5f5e5a;}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--color-text-secondary);margin-top:14px;}
+.legend .dot{display:inline-block;width:10px;height:10px;border-radius:99px;margin-right:5px;}
+.pill{display:flex;align-items:center;gap:12px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:999px;padding:8px 18px 8px 10px;width:max-content;}
+.foot{font-size:11px;color:var(--color-text-tertiary);margin-top:16px;line-height:1.8;}
+.sunrays{transform-box:fill-box;transform-origin:center;animation:spinSlow 60s linear infinite;}
+@keyframes spinSlow{to{transform:rotate(360deg)}}
+.halo{transform-box:fill-box;transform-origin:center;animation:halo 3.2s ease-in-out infinite;}
+@keyframes halo{50%{opacity:.72;transform:scale(1.12)}}
+.beam{stroke-dasharray:14 10;animation:beam 1.4s linear infinite;}
+@keyframes beam{to{stroke-dashoffset:-24}}
+.star{animation:tw 3.6s ease-in-out infinite;}
+@keyframes tw{50%{opacity:.32}}
+#stars,#moonWrap{transition:opacity 1s ease;}
+#moonWrap{opacity:0;}
+#moonWrap.on{opacity:1;}
+.glint{transform-box:fill-box;transform-origin:center;animation:glint 1.5s ease-out 2;}
+@keyframes glint{from{opacity:.9;transform:scale(.5)}to{opacity:0;transform:scale(2)}}
+#mkLabel{opacity:0;transition:opacity .3s;}
+#mkLabel.on{opacity:1;}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>地球昼夜动画 · 设计稿 v2</h1>
+  <p class="sub">大陆按真实经纬度轮廓绘制 · 太阳光线动态发散 · 月亮随当地夜晚出现 · 球体光影质感。此稿仅确认设计方向，实装时融入现有玻璃拟态 + 渐变天空风格。</p>
+  <div class="frame">
+    <div class="label">大窗 · 昼夜地球卡片</div>
+    <div class="card">
+      <div class="card-head"><b>今日昼夜 · 慈溪</b><span id="nowClock">现在 09:27:33</span></div>
+      <div class="card-body">
+        <div class="scene">
+          <svg id="globeSvg" viewBox="0 0 320 320" width="320" height="320" role="img" style="display:block;max-width:100%;height:auto;">
+            <title>昼夜地球示意</title>
+            <desc>地球按真实大陆轮廓旋转，晨昏线分隔昼夜，太阳在左上发散光线，月亮在当地夜晚出现，慈溪定位点随自转穿越晨昏线时闪现日出或日落。</desc>
+            <defs>
+              <radialGradient id="oceanG" gradientUnits="userSpaceOnUse" cx="118" cy="112" r="190">
+                <stop offset="0" stop-color="#dcedff"/>
+                <stop offset="0.55" stop-color="#a3c9ef"/>
+                <stop offset="1" stop-color="#5c8fcf"/>
+              </radialGradient>
+              <radialGradient id="limbG" gradientUnits="userSpaceOnUse" cx="122" cy="114" r="185">
+                <stop offset="0.55" stop-color="rgba(10,30,70,0)"/>
+                <stop offset="1" stop-color="rgba(10,30,70,0.42)"/>
+              </radialGradient>
+              <radialGradient id="sunG" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="#fff8dd"/>
+                <stop offset="0.6" stop-color="#ffd75e"/>
+                <stop offset="1" stop-color="#f5a62f"/>
+              </radialGradient>
+              <radialGradient id="haloG" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="rgba(255,208,105,0.5)"/>
+                <stop offset="1" stop-color="rgba(255,208,105,0)"/>
+              </radialGradient>
+              <radialGradient id="moonG" cx="0.38" cy="0.32" r="0.85">
+                <stop offset="0" stop-color="#fdfaf1"/>
+                <stop offset="1" stop-color="#cfc7b4"/>
+              </radialGradient>
+              <radialGradient id="moonHalo" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="rgba(190,210,245,0.55)"/>
+                <stop offset="1" stop-color="rgba(190,210,245,0)"/>
+              </radialGradient>
+              <clipPath id="discClip"><circle cx="160" cy="160" r="118"/></clipPath>
+              <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.4"/></filter>
+              <filter id="softer" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="7"/></filter>
+            </defs>
+            <circle cx="160" cy="160" r="123" fill="none" stroke="#bcdcf8" stroke-width="7" opacity="0.5"/>
+            <g clip-path="url(#discClip)">
+              <circle cx="160" cy="160" r="118" fill="url(#oceanG)"/>
+              <g id="grat" stroke="#7fb0e4" stroke-width="0.8" fill="none" opacity="0.55"></g>
+              <g id="lands" fill="#9ec96d" stroke="#7cab54" stroke-width="0.7"></g>
+              <g id="waters" fill="url(#oceanG)" stroke="#7cab54" stroke-width="0.5"></g>
+              <path id="nightPath" fill="#0c1c42" opacity="0.86"></path>
+              <path id="termGlow" fill="none" stroke="#ffb347" stroke-width="6" opacity="0.4" filter="url(#soft)"></path>
+              <path id="termLine" fill="none" stroke="#ffc466" stroke-width="2.2"></path>
+              <circle cx="160" cy="160" r="118" fill="url(#limbG)"/>
+            </g>
+            <g id="markerPos" transform="translate(160 160)">
+              <circle id="mkRing" class="glint" cx="0" cy="0" r="12" fill="none" stroke="#f0625a" stroke-width="2.5"/>
+              <circle id="mkHalo" cx="0" cy="0" r="10" fill="none" stroke="#f0625a" stroke-width="1.6" opacity="0.55"/>
+              <circle id="mkDot" cx="0" cy="0" r="5.5" fill="#f0625a" stroke="#ffffff" stroke-width="1.6"/>
+              <text id="mkLabel" x="13" y="-9" font-size="12" font-weight="500" fill="#2c2c2a" font-family="inherit"></text>
+            </g>
+            <g transform="translate(34 58)">
+              <circle class="halo" r="36" fill="url(#haloG)"/>
+              <g class="sunrays" stroke="#f0a93c" stroke-width="2.6" stroke-linecap="round">
+                <line x1="0" y1="-19" x2="0" y2="-30"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(30)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(60)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(90)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(120)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(150)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(180)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(210)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(240)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(270)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(300)"/>
+                <line x1="0" y1="-19" x2="0" y2="-30" transform="rotate(330)"/>
+              </g>
+              <circle r="15" fill="url(#sunG)"/>
+              <g stroke="#f5b84e" stroke-width="1.6" stroke-linecap="round" opacity="0.65">
+                <line class="beam" x1="16" y1="12" x2="62" y2="52"/>
+                <line class="beam" x1="22" y1="-4" x2="74" y2="12" style="animation-delay:-.5s"/>
+                <line class="beam" x1="6" y1="24" x2="38" y2="72" style="animation-delay:-.9s"/>
+              </g>
+            </g>
+            <g id="moonWrap" transform="translate(278 58)">
+              <circle class="halo" r="28" fill="url(#moonHalo)" style="animation-duration:4.5s"/>
+              <circle r="12" fill="url(#moonG)"/>
+              <g fill="#c9c0ab" opacity="0.5">
+                <circle cx="-3.5" cy="-2.5" r="2.4"/>
+                <circle cx="3" cy="2" r="1.8"/>
+                <circle cx="-1" cy="5" r="1.3"/>
+              </g>
+            </g>
+            <g id="stars" fill="#b9c9e2">
+              <circle class="star" cx="228" cy="30" r="1.6"/>
+              <circle class="star" cx="258" cy="118" r="1.3" style="animation-delay:.7s"/>
+              <circle class="star" cx="238" cy="140" r="1.7" style="animation-delay:1.3s"/>
+              <circle class="star" cx="290" cy="160" r="1.3" style="animation-delay:1.9s"/>
+              <circle class="star" cx="246" cy="196" r="1.6" style="animation-delay:.4s"/>
+              <circle class="star" cx="272" cy="232" r="1.3" style="animation-delay:2.2s"/>
+              <circle class="star" cx="205" cy="262" r="1.6" style="animation-delay:1.1s"/>
+              <circle class="star" cx="150" cy="288" r="1.3" style="animation-delay:2.7s"/>
+              <circle class="star" cx="86" cy="272" r="1.5" style="animation-delay:1.6s"/>
+              <circle class="star" cx="30" cy="210" r="1.3" style="animation-delay:.9s"/>
+              <circle class="star" cx="18" cy="140" r="1.5" style="animation-delay:2.4s"/>
+              <circle class="star" cx="52" cy="30" r="1.3" style="animation-delay:1.4s"/>
+              <circle class="star" cx="112" cy="16" r="1.6" style="animation-delay:.2s"/>
+              <circle class="star" cx="186" cy="12" r="1.3" style="animation-delay:2.9s"/>
+            </g>
+            <g id="labels"></g>
+          </svg>
+        </div>
+        <div class="col2">
+          <div class="tiles">
+            <div class="tile">
+              <div class="t">日出</div>
+              <div class="v">06:13</div>
+            </div>
+            <div class="tile">
+              <div class="t">日落</div>
+              <div class="v">17:15</div>
+            </div>
+            <div class="tile">
+              <div class="t">月出</div>
+              <div class="v">17:58</div>
+            </div>
+            <div class="tile">
+              <div class="t">月落</div>
+              <div class="v">06:52</div>
+            </div>
+          </div>
+          <div class="chips" style="margin-top:12px;">
+            <span class="chip">白天 · 上午</span>
+            <span class="chip cool">距日落 7 小时 48 分</span>
+          </div>
+          <div class="chips">
+            <span class="chip gray">昼长 11 小时 02 分</span>
+            <span class="chip gray">正午 11:44</span>
+          </div>
+        </div>
+      </div>
+      <div class="bar">
+        <div class="fill"></div>
+        <div class="now"></div>
+        <div class="lab">现在 09:27</div>
+      </div>
+      <div class="bar-ends"><span>日出 06:13</span><span>日落 17:15</span></div>
+      <div class="foot">动效：地球 45 秒自转一圈演示，定位点随真实大陆轮廓旋转；越过晨昏线的瞬间闪现「日出 / 日落」，同时月亮随当地夜晚淡入淡出、太阳光线持续发散。实装后按真实恒星时与真实日月位置驱动，时刻数据与万年历同源互验。</div>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:#f2b34c;"></span>晨昏线 · 实时天文计算</span>
+      <span><span class="dot" style="background:#f0625a;"></span>定位点 · 慈溪 30.2°N 121.3°E</span>
+      <span><span class="dot" style="background:#f5b84e;"></span>太阳 · 动态发散光线</span>
+      <span><span class="dot" style="background:#cfc7b4;"></span>月亮 · 夜间出现</span>
+      <span><span class="dot" style="background:#0c1c42;"></span>夜半球 · 定位点入夜变暗</span>
+    </div>
+    <div class="label" style="margin:18px 0 10px;">小窗 · 吸顶精简</div>
+    <div class="pill">
+      <svg viewBox="0 0 32 32" width="32" height="32" role="img">
+        <title>迷你昼夜地球</title>
+        <desc>缩小版昼夜地球，右侧为夜半球，红点为慈溪定位点，弯月在夜侧。</desc>
+        <clipPath id="miniClip"><circle cx="16" cy="16" r="13"/></clipPath>
+        <g clip-path="url(#miniClip)">
+          <circle cx="16" cy="16" r="13" fill="#a3c9ef"/>
+          <path d="M 14 3 Q 9 16 14 29 A 13 13 0 0 0 14 3 Z" fill="#0c1c42" opacity="0.86"/>
+          <path d="M 14 3 Q 9 16 14 29" fill="none" stroke="#ffc466" stroke-width="1.3"/>
+          <circle cx="12" cy="13" r="2.2" fill="#f0625a" stroke="#ffffff" stroke-width="1"/>
+        </g>
+        <circle cx="25" cy="8" r="3.2" fill="#e8e2d2"/>
+      </svg>
+      <div style="font-size:13px;color:var(--color-text-primary);">日出 06:13 · 日落 17:15 <span style="color:var(--color-text-tertiary);font-size:11px;margin-left:8px;">距日落 7:48</span></div>
+    </div>
+    <div class="foot">球体为正交投影伪 3D：真实大陆多边形随恒星时旋转，晨昏线由太阳赤纬与当地时角实时计算，月球按真实月出月落控制显隐。渲染为单层 canvas / SVG，收起小窗即暂停，30 帧上限。</div>
+  </div>
+</div>
+<script>
+(function () {
+  var D = Math.PI / 180;
+  var CX = 160, CY = 160, R = 118, PHI0 = 22 * D;
+  var S = (function () { var v = [-0.78, 0.5, 0.38], r = Math.hypot(v[0], v[1], v[2]); return [v[0] / r, v[1] / r, v[2] / r]; })();
+  var U = (function () {
+    var n = [0, 1, 0], ns = n[0] * S[0] + n[1] * S[1] + n[2] * S[2];
+    var u = [n[0] - ns * S[0], n[1] - ns * S[1], n[2] - ns * S[2]];
+    var r = Math.hypot(u[0], u[1], u[2]); u = [u[0] / r, u[1] / r, u[2] / r];
+    return u;
+  })();
+  var V = (function () {
+    return [S[1] * U[2] - S[2] * U[1], S[2] * U[0] - S[0] * U[2], S[0] * U[1] - S[1] * U[0]];
+  })();
+  var LAND = {
+    africa: [[-5.5,35.8],[0,36.5],[10,37],[11,33.5],[15,32],[20,32.5],[25,31.5],[29,31],[31.5,31.5],[32.5,29.5],[34,28],[35.5,24],[37,21],[38.5,18],[39.5,15],[43,12.5],[45,10.5],[48,11.5],[51,12],[49,8],[47,4],[44,1.5],[41,-2],[40,-5.5],[39.5,-8],[40.5,-11],[40.5,-15],[37,-18],[35,-21],[32.5,-26],[31,-29],[28,-32],[24,-34],[20,-34.5],[18,-33.5],[15.5,-27],[14,-22],[12.5,-18],[12,-14],[12.5,-10],[13,-7],[12,-5.5],[9.5,-1],[9.5,2],[8.5,4],[6,4.5],[4,6],[0,5.5],[-4,5],[-8,4.5],[-11,6],[-13,9],[-15.5,12],[-17,15],[-17,20],[-15,23],[-13,27],[-10,30],[-6,35.5]],
+    eurasia: [[-6,36],[-7,37],[-9,38.5],[-9,41],[-8.8,43.5],[-4,43.5],[-1.5,43.5],[-1,46],[-4,48],[-1,49.5],[1.5,51],[4,52],[5,53.5],[8,53.8],[8.2,56],[9.5,57.5],[10.5,59],[10,60.5],[7,63],[10,64],[12,66],[15,68],[19,69.5],[24,71],[29,70.5],[33,69.5],[38,68],[41,67],[44,66.5],[48,68],[55,69],[60,70.5],[67,72],[71,73],[76,72.5],[80,73.5],[87,75],[94,76],[100,77],[106,77],[112,74],[118,73.5],[125,73],[132,72.5],[139,72],[145,71.5],[151,70.5],[157,70],[163,69.5],[169,68.5],[176,67.5],[180,66.5],[178,64],[173,62],[170,60],[165,60],[162,57],[158,53],[156,51],[155,54],[152,59],[146,59],[142,57],[138,54],[135,50],[132,46],[130,43],[128,42],[126,39.5],[126,36.5],[126,34.5],[122,37],[119,35],[121,32],[122,30.5],[120,27],[118,24],[115,22.5],[113,22],[110,21],[108,21],[106,20],[106,17],[108,13],[107,10],[104,9],[101,13],[100,12],[99,10],[100,7],[101,4],[104,1.5],[102,2],[100,6],[98,8],[97,12],[94,16],[92,21],[90,22],[87,21],[82,17],[80,13],[79,10],[77.5,8],[74,12],[73,16],[70,19],[68,22],[66,23],[63,24],[60,25],[57,25.5],[56,25],[58,22.5],[59.5,22.5],[58,20],[55,17],[52,15],[48,14],[45,13],[43,13],[42,15],[39,20],[37,24],[35,28],[34.5,28.5],[34,31],[35,33],[36,36],[33,36.5],[30,36.5],[27,36.5],[26,38.5],[24,38],[23,37.5],[24,40.5],[21,39.5],[19,40],[19,42],[15,44],[13,45.5],[12.5,45],[12,44],[14,42],[16,41.8],[18,40.3],[17,38.9],[15.6,38],[14,40.5],[12,41.5],[11,42.5],[10,44],[8.5,44.2],[6,43.2],[3,42.5],[0,39.5],[-2,36.8],[-5.5,36]],
+    namerica: [[-168,65.5],[-166,61],[-162,58.5],[-158,57],[-153,58],[-148,60],[-143,60],[-138,58],[-134,56],[-130,53],[-126,50],[-124,46],[-123,42],[-121,37],[-118,34],[-114,31],[-112,27],[-110,23],[-109,23],[-106,23],[-101,20],[-97,16],[-92,13],[-87,11],[-83,8],[-79,8],[-79,9],[-83,11],[-87,15],[-88,18],[-87,21],[-90,21],[-94,19],[-97,21],[-97,26],[-94,29],[-89,29],[-84,30],[-82,27],[-80,25],[-80,28],[-78,32],[-75,35],[-74,39],[-71,42],[-67,45],[-65,44],[-60,46],[-56,47],[-55,50],[-58,54],[-62,57],[-65,58],[-68,58],[-74,60],[-78,62],[-82,64],[-86,66],[-90,68],[-95,68],[-100,69],[-108,68],[-115,69],[-122,70],[-128,70],[-134,69],[-140,70],[-148,70],[-155,71],[-162,69],[-166,68]],
+    samerica: [[-77,7.5],[-72,12],[-66,10.5],[-60,8],[-54,6],[-50,2],[-46,-1],[-41,-3],[-37,-5],[-35,-7],[-37,-11],[-39,-15],[-40,-20],[-43,-23],[-47,-25],[-50,-28],[-53,-32],[-56,-35],[-58,-38],[-62,-40],[-64,-43],[-66,-46],[-68,-50],[-68,-53],[-71,-54],[-73,-52],[-74,-48],[-73,-44],[-73,-40],[-72,-36],[-71,-32],[-70,-27],[-70,-22],[-71,-18],[-75,-14],[-78,-10],[-80,-6],[-81,-4],[-80,-1],[-78,2],[-77,5]],
+    australia: [[113,-22],[114,-26],[115,-31],[118,-35],[122,-34],[126,-32],[130,-31],[133,-32],[135,-35],[138,-35],[140,-38],[144,-39],[147,-38],[150,-36],[152,-32],[153,-28],[152,-25],[149,-21],[146,-19],[145,-15],[142,-11],[139,-13],[136,-13],[133,-12],[130,-12],[127,-14],[124,-17],[121,-19],[117,-20]],
+    greenland: [[-43,60],[-48,62],[-52,65],[-54,69],[-57,72],[-61,76],[-66,79],[-60,82],[-45,83],[-30,82],[-22,78],[-20,74],[-24,70],[-30,67],[-36,64],[-40,62]],
+    madagascar: [[43,-12],[47,-14],[50,-17],[49,-21],[47,-25],[45,-25],[43,-22],[42,-18]],
+    japan: [[130,31],[131,33],[134,34],[137,35],[140,36],[141,39],[143,41],[145,43],[142,45],[140,42],[139,38],[136,35],[133,34],[130,33]],
+    uk: [[-5,50],[-4,52],[-5,54],[-4,56],[-5,58],[-3,58],[-1,56],[0,53],[1,52],[-2,51]],
+    ireland: [[-10,52],[-9,54],[-8,55],[-6,55],[-6,52],[-8,51]],
+    nz: [[173,-35],[176,-38],[178,-38],[176,-41],[173,-43],[169,-45],[167,-45],[170,-42],[172,-39]],
+    tasmania: [[145,-41],[148,-41],[148,-43],[145,-43]],
+    srilanka: [[80,9],[82,8],[81,6],[80,6]],
+    cuba: [[-85,22],[-80,23],[-75,20],[-79,20],[-83,21]],
+    sumatra: [[95,5],[99,3],[102,-2],[106,-6],[103,-5],[98,1]],
+    java: [[105,-6],[112,-7],[115,-8],[112,-8],[107,-7]],
+    borneo: [[109,2],[113,4],[117,4],[119,-1],[116,-4],[111,-3],[109,-1]],
+    newguinea: [[131,-1],[137,-3],[141,-3],[147,-6],[150,-10],[143,-9],[137,-8],[132,-5]],
+    philippines: [[120,18],[122,14],[125,10],[122,7],[120,12]],
+    antarctica: [[-180,-68],[-150,-70],[-120,-71],[-90,-70],[-72,-66],[-62,-63],[-58,-66],[-60,-71],[-30,-72],[0,-70],[30,-69],[60,-68],[90,-67],[120,-67],[150,-69],[180,-68]]
+  };
+  var WATER = [
+    [[-95,58],[-94,63],[-88,65],[-82,64],[-78,62],[-79,57],[-83,53],[-88,52],[-93,55]],
+    [[28,41.5],[29,45],[33,46],[38,45.5],[41,43],[37,41],[32,41]],
+    [[12,55],[13,59],[18,62],[23,63],[26,60],[22,56],[17,54.5]],
+    [[47,45],[51,46],[54,42],[52,38],[49,37],[47,40]]
+  ];
+  var PARALLELS = [-60, -30, 0, 30, 60];
+  var MERIDIANS = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+
+  function pvec(lon, lat) {
+    var l = lon * D, p = lat * D, cp = Math.cos(p);
+    return [cp * Math.cos(l), cp * Math.sin(l), Math.sin(p)];
+  }
+  function basis(lamDeg) {
+    var l = lamDeg * D, cl = Math.cos(l), sl = Math.sin(l), cp = Math.cos(PHI0), sp = Math.sin(PHI0);
+    return { e: [-sl, cl, 0], n: [-sp * cl, -sp * sl, cp], c: [cp * cl, cp * sl, sp] };
+  }
+  function viewP(P, B) {
+    return [P[0] * B.e[0] + P[1] * B.e[1] + P[2] * B.e[2],
+            P[0] * B.n[0] + P[1] * B.n[1] + P[2] * B.n[2],
+            P[0] * B.c[0] + P[1] * B.c[1] + P[2] * B.c[2]];
+  }
+  function scr(v) {
+    var x = v[0], y = v[1];
+    if (v[2] < 0) { var r = Math.hypot(x, y) || 1e-6; x /= r; y /= r; }
+    return [CX + x * R, CY - y * R];
+  }
+  function polyD(poly, B) {
+    var d = '', i, s;
+    for (i = 0; i < poly.length; i++) {
+      s = scr(viewP(pvec(poly[i][0], poly[i][1]), B));
+      d += (i ? 'L' : 'M') + s[0].toFixed(1) + ' ' + s[1].toFixed(1);
+    }
+    return d + 'Z';
+  }
+  function polyVisible(poly, B) {
+    var m = -2, i, z;
+    for (i = 0; i < poly.length; i++) {
+      z = viewP(pvec(poly[i][0], poly[i][1]), B)[2];
+      if (z > m) m = z;
+    }
+    return m > -0.02;
+  }
+  function lineD(pts, B) {
+    var d = '', pen = false, i, v, s;
+    for (i = 0; i < pts.length; i++) {
+      v = viewP(pvec(pts[i][0], pts[i][1]), B);
+      if (v[2] >= 0) {
+        s = scr(v);
+        d += (pen ? 'L' : 'M') + s[0].toFixed(1) + ' ' + s[1].toFixed(1);
+        pen = true;
+      } else pen = false;
+    }
+    return d;
+  }
+  function zAt(t) {
+    return (Math.cos(t) * U[2] + Math.sin(t) * V[2]);
+  }
+  function ptAt(t) {
+    return [Math.cos(t) * U[0] + Math.sin(t) * V[0], Math.cos(t) * U[1] + Math.sin(t) * V[1], Math.cos(t) * U[2] + Math.sin(t) * V[2]];
+  }
+  function termGeom() {
+    var N = 240, zs = [], i, t;
+    for (i = 0; i < N; i++) zs.push(zAt(i * 2 * Math.PI / N));
+    var start = -1;
+    for (i = 0; i < N; i++) if (zs[i] >= 0 && zs[(i - 1 + N) % N] < 0) { start = i; break; }
+    if (start < 0) return { line: '', fill: '' };
+    var run = [];
+    for (i = 0; i < N; i++) {
+      var idx = (start + i) % N;
+      if (zs[idx] < 0) break;
+      run.push(idx);
+    }
+    var tPrev = (run[0] - 1 + N) % N * 2 * Math.PI / N;
+    var lo = tPrev, hi = run[0] * 2 * Math.PI / N;
+    for (i = 0; i < 26; i++) { var mid = (lo + hi) / 2; if (zAt(mid) < 0) lo = mid; else hi = mid; }
+    var tStart = hi;
+    var lastIdx = run[run.length - 1];
+    lo = lastIdx * 2 * Math.PI / N; hi = (lastIdx + 1) % N * 2 * Math.PI / N;
+    if (hi < lo) hi += 2 * Math.PI;
+    for (i = 0; i < 26; i++) { var mid2 = (lo + hi) / 2; if (zAt(mid2) > 0) lo = mid2; else hi = mid2; }
+    var tEnd = lo;
+    var curve = [tStart];
+    for (i = 0; i < run.length; i++) curve.push(run[i] * 2 * Math.PI / N);
+    curve.push(tEnd);
+    var pts = [], j;
+    for (j = 0; j < curve.length; j++) {
+      var P = ptAt(curve[j]);
+      pts.push([CX + P[0] * R, CY - P[1] * R]);
+    }
+    var line = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
+    for (j = 1; j < pts.length; j++) line += 'L' + pts[j][0].toFixed(1) + ' ' + pts[j][1].toFixed(1);
+    var A = pts[pts.length - 1], Bp = pts[0];
+    var aA = Math.atan2(A[1] - CY, A[0] - CX);
+    var aB = Math.atan2(Bp[1] - CY, Bp[0] - CX);
+    var spanCW = aB - aA; while (spanCW < 0) spanCW += 2 * Math.PI; while (spanCW >= 2 * Math.PI) spanCW -= 2 * Math.PI;
+    var midCW = aA + spanCW / 2;
+    var dayMid = Math.cos(midCW) * S[0] - Math.sin(midCW) * S[1];
+    var sweep, span;
+    if (dayMid > 0) { sweep = 0; span = 2 * Math.PI - spanCW; }
+    else { sweep = 1; span = spanCW; }
+    var large = span > Math.PI ? 1 : 0;
+    var arc = 'A' + R + ' ' + R + ' 0 ' + large + ' ' + sweep + ' ' + Bp[0].toFixed(1) + ' ' + Bp[1].toFixed(1);
+    return { line: line, fill: line + arc + 'Z' };
+  }
+
+  var landsG = document.getElementById('lands');
+  var watersG = document.getElementById('waters');
+  var gratG = document.getElementById('grat');
+  var nightPath = document.getElementById('nightPath');
+  var termLine = document.getElementById('termLine');
+  var termGlow = document.getElementById('termGlow');
+  var markerPos = document.getElementById('markerPos');
+  var mkDot = document.getElementById('mkDot');
+  var mkRing = document.getElementById('mkRing');
+  var mkHalo = document.getElementById('mkHalo');
+  var mkLabel = document.getElementById('mkLabel');
+  var moonWrap = document.getElementById('moonWrap');
+  var starsG = document.getElementById('stars');
+  var labelsG = document.getElementById('labels');
+  var nowClock = document.getElementById('nowClock');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  var landEls = [], waterEls = [];
+  Object.keys(LAND).forEach(function (k) {
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', '');
+    landsG.appendChild(p);
+    landEls.push({ el: p, poly: LAND[k] });
+  });
+  WATER.forEach(function (poly) {
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', '');
+    watersG.appendChild(p);
+    waterEls.push({ el: p, poly: poly });
+  });
+  var gratEls = [];
+  PARALLELS.forEach(function (lat) {
+    var pts = [], lon;
+    for (lon = -180; lon <= 180; lon += 5) pts.push([lon, lat]);
+    var p = document.createElementNS(NS, 'path');
+    gratG.appendChild(p);
+    gratEls.push({ el: p, pts: pts });
+  });
+  MERIDIANS.forEach(function (lon) {
+    var pts = [], lat;
+    for (lat = -88; lat <= 88; lat += 6) pts.push([lon, lat]);
+    var p = document.createElementNS(NS, 'path');
+    gratG.appendChild(p);
+    gratEls.push({ el: p, pts: pts });
+  });
+
+  var LABELS = [
+    { zh: '亚洲', lon: 92, lat: 45 },
+    { zh: '欧洲', lon: 16, lat: 52 },
+    { zh: '非洲', lon: 20, lat: 3 },
+    { zh: '北美洲', lon: -101, lat: 45 },
+    { zh: '南美洲', lon: -58, lat: -12 },
+    { zh: '大洋洲', lon: 133, lat: -25 },
+    { zh: '南极洲', lon: -10, lat: -73 }
+  ];
+  var labelEls = LABELS.map(function (Lb) {
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('font-size', '12');
+    t.setAttribute('font-weight', '500');
+    t.setAttribute('stroke-width', '3');
+    t.setAttribute('paint-order', 'stroke');
+    t.setAttribute('opacity', '0');
+    labelsG.appendChild(t);
+    return { el: t, lon: Lb.lon, lat: Lb.lat };
+  });
+
+  var lastDay = null, labelTimer = 0;
+  var clockBase = 9 * 3600 + 27 * 60 + 33;
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+
+  function render(t) {
+    var lam = 121.3 + t * 8;
+    var B = basis(lam);
+    var i;
+    for (i = 0; i < landEls.length; i++) {
+      var L = landEls[i];
+      L.el.setAttribute('d', polyVisible(L.poly, B) ? polyD(L.poly, B) : '');
+    }
+    for (i = 0; i < waterEls.length; i++) {
+      var W = waterEls[i];
+      W.el.setAttribute('d', polyVisible(W.poly, B) ? polyD(W.poly, B) : '');
+    }
+    for (i = 0; i < gratEls.length; i++) gratEls[i].el.setAttribute('d', lineD(gratEls[i].pts, B));
+    var g = termGeom();
+    nightPath.setAttribute('d', g.fill);
+    termLine.setAttribute('d', g.line);
+    termGlow.setAttribute('d', g.line);
+    var v = viewP(pvec(121.3, 30.2), B);
+    if (v[2] < 0.04) {
+      markerPos.setAttribute('opacity', '0');
+    } else {
+      markerPos.setAttribute('opacity', '1');
+      var s = scr(v);
+      markerPos.setAttribute('transform', 'translate(' + s[0].toFixed(1) + ' ' + s[1].toFixed(1) + ')');
+    }
+    var day = v[0] * S[0] + v[1] * S[1] + v[2] * S[2] > 0;
+    if (day !== lastDay) {
+      if (lastDay !== null) {
+        mkLabel.textContent = day ? '日出' : '日落';
+        mkLabel.setAttribute('class', 'on');
+        clearTimeout(labelTimer);
+        labelTimer = setTimeout(function () { mkLabel.setAttribute('class', ''); }, 2600);
+        mkRing.setAttribute('class', 'glint');
+        void mkRing.getBoundingClientRect();
+      }
+      lastDay = day;
+      if (day) {
+        mkDot.setAttribute('fill', '#f0625a');
+        mkRing.setAttribute('stroke', '#f0625a');
+        mkHalo.setAttribute('stroke', '#f0625a');
+        moonWrap.setAttribute('class', '');
+        starsG.setAttribute('opacity', '0.35');
+      } else {
+        mkDot.setAttribute('fill', '#8aa2d8');
+        mkRing.setAttribute('stroke', '#8aa2d8');
+        mkHalo.setAttribute('stroke', '#8aa2d8');
+        moonWrap.setAttribute('class', 'on');
+        starsG.setAttribute('opacity', '1');
+      }
+    }
+    for (i = 0; i < labelEls.length; i++) {
+      var Le = labelEls[i];
+      var lv = viewP(pvec(Le.lon, Le.lat), B);
+      if (lv[2] < 0.12) { Le.el.setAttribute('opacity', '0'); continue; }
+      var ls = scr(lv);
+      Le.el.setAttribute('x', ls[0].toFixed(1));
+      Le.el.setAttribute('y', (ls[1] + 4).toFixed(1));
+      var dayL = lv[0] * S[0] + lv[1] * S[1] + lv[2] * S[2] > 0;
+      Le.el.setAttribute('fill', dayL ? '#1d4f7c' : '#eaf2fb');
+      Le.el.setAttribute('stroke', dayL ? '#ffffff' : '#0c1c42');
+      Le.el.setAttribute('opacity', lv[2] > 0.3 ? '0.95' : (((lv[2] - 0.12) / 0.18) * 0.95).toFixed(2));
+    }
+    var secs = Math.floor(clockBase + t) % 86400;
+    nowClock.textContent = '现在 ' + pad(Math.floor(secs / 3600)) + ':' + pad(Math.floor(secs / 60) % 60) + ':' + pad(secs % 60);
+  }
+
+  var last = 0, t0 = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 33) return;
+    last = now;
+    render((now - t0) / 1000);
+  }
+  render(0);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

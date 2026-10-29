@@ -1,0 +1,18 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 调试 / 自检产物
+g-*.png
+u-*.png
+zoom-*.png
+test-icons.png
+test-icons.html
+cap.js
+zoom3.js
+
+# 系统与日志
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
