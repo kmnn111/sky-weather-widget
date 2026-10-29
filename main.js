@@ -13,14 +13,8 @@ if (SHOT_MODE) {
   try { app.setPath('userData', app.getPath('userData') + '-shot'); } catch (e) { }
 }
 
-const UA = 'SkyWeatherWidget/1.0 (Windows desktop widget)';
-const got = (u, ms = 12000, opts = {}) => {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  return fetch(u, { signal: ctrl.signal, headers: { 'User-Agent': UA, ...(opts.headers || {}) } })
-    .then(r => { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .catch(e => { clearTimeout(t); throw e; });
-};
+// 网络抓取（网络层故障自动重试）/ 地名解析 / 地点搜索（Nominatim + Open-Meteo 双源兜底）
+const { got, parseNominatim, searchPlaces, friendlyNetError } = require('./geo.js');
 
 /* ---------------- 设置持久化 ---------------- */
 let win = null;
@@ -76,60 +70,7 @@ function migrateLocations() {
   if (changed) { settings.locations = next; persist(); }
 }
 
-/* ---------------- 地理解析：Nominatim -> 浙江 · 宁波 · 慈溪 ---------------- */
-function parseNominatim(item) {
-  const parts = (item.display_name || '').split(', ').map(s => s.trim())
-    .filter(s => s && s !== '中国' && !/^\d{6}$/.test(s));
-  const clean = s => {
-    s = s || '';
-    if (/新区$/.test(s)) return s; // 浦东新区 / 滨海新区 等整名保留
-    return s.replace(/(维吾尔自治区|壮族自治区|回族自治区|特别行政区|特別行政區|自治州|自治县|自治縣|自治区|地区|省|市|县|縣|区|區|旗|盟|乡|鄉|镇|鎮)$/, '');
-  };
-  // 港澳台返回繁体，后缀识别需兼容；香港/澳门/台湾视为省级
-  const isProvince = s => /(省|自治区|自治縣|特别行政区|特別行政區)$/.test(s)
-    || /^(北京|上海|天津|重庆)市$/.test(s)
-    || /^(香港|澳门|澳門|台湾|台灣)/.test(s);
-  const isDistrict = s => /(区|區|县|縣|旗)$/.test(s) && !/市$/.test(s);
-  const addr = item.address || {};
-
-  // display_name 从具体到一般：[具体地名, 区县, 地级市, 省]
-  const list = parts.slice();
-  // 兼容两种地址链顺序：一般→具体（如"浙江省 · 宁波市 · 慈溪市"）先翻转
-  if (list.length >= 2 && isProvince(list[0]) && !isProvince(list[list.length - 1])) list.reverse();
-  let province = '', prefecture = '', county = '', detail = '';
-  if (list.length && isProvince(list[list.length - 1])) province = list.pop(); // 含直辖市
-  if (list.length) {
-    const last = list[list.length - 1];
-    if (isDistrict(last)) {
-      // 末位是区/县（直辖市或省直管）：没有地级市一层
-      county = list.pop();
-      detail = list.join(' · ');
-    } else if (list.length >= 2) {
-      // [具体地名?, 区县, 地级市]
-      prefecture = list.pop();
-      county = list.pop();
-      detail = list.join(' · ');
-    } else {
-      county = list.pop(); // 只剩单个市/县
-    }
-  }
-  if (!province) province = addr.state || '';
-  if (!detail) detail = addr.town || addr.suburb || addr.village || addr.hamlet || addr.road || '';
-
-  const name = clean(county || item.name || detail || '未知地点');
-  const parentRaw = clean(prefecture);
-  const admin1 = clean(province);
-  const detailClean = clean(detail.split(' · ')[0]) === name ? '' : detail;
-  return {
-    name,
-    parent: parentRaw === admin1 ? '' : parentRaw, // 直辖市去重
-    detail: detailClean,
-    admin1,
-    lat: parseFloat(item.lat),
-    lon: parseFloat(item.lon),
-    display: (item.display_name || '').split(', ').filter(s => s && s !== '中国').join(' · ')
-  };
-}
+/* ---------------- 地理解析：见 geo.js（parseNominatim）---------------- */
 
 /* ---------------- 天气 / 空气质量 ---------------- */
 async function fetchWeather(lat, lon) {
@@ -297,11 +238,10 @@ function registerIpc() {
   ipcMain.handle('weather:get', (_e, p) => fetchWeather(p.lat, p.lon).catch(err => ({ error: String(err.message || err) })));
 
   ipcMain.handle('geo:search', async (_e, q) => {
+    // 双源兜底：Nominatim 故障/无结果 → Open-Meteo 地理编码；网络层故障 got() 自动重试
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&accept-language=zh&limit=8&addressdetails=1&q=${encodeURIComponent(q)}`;
-      const list = await got(url, 15000);
-      return list.map(parseNominatim).filter(x => Number.isFinite(x.lat));
-    } catch (err) { return { error: String(err.message || err) }; }
+      return await searchPlaces(q);
+    } catch (err) { return { error: friendlyNetError(err) }; }
   });
 
   ipcMain.handle('geo:reverse', async (_e, p) => {
@@ -311,7 +251,7 @@ function registerIpc() {
       const loc = parseNominatim(r);
       if (!loc.detail && p.fallbackName) loc.detail = p.fallbackName;
       return loc;
-    } catch (err) { return { error: String(err.message || err) }; }
+    } catch (err) { return { error: friendlyNetError(err) }; }
   });
 
   ipcMain.handle('geo:iplocate', async () => {
