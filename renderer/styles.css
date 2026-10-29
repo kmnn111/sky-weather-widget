@@ -839,8 +839,24 @@ body.docked .update-banner { display: none !important; }
 .g-row { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
 .g-stage {
   flex: 0 0 auto; width: 216px;
-  background: linear-gradient(160deg, rgba(238, 244, 251, 0.72), rgba(214, 231, 248, 0.5));
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  /* 宇宙星辰深空背景：淡星云渐变打底 + 静态星点（纯 CSS 合成层一次绘制，零动画/零重绘成本） */
+  background:
+    radial-gradient(1.5px 1.5px at 22px 26px, rgba(255, 255, 255, 0.9), transparent 100%),
+    radial-gradient(1.1px 1.1px at 188px 18px, rgba(255, 255, 255, 0.8), transparent 100%),
+    radial-gradient(1.3px 1.3px at 32px 176px, rgba(212, 226, 255, 0.85), transparent 100%),
+    radial-gradient(1px 1px at 176px 190px, rgba(255, 255, 255, 0.7), transparent 100%),
+    radial-gradient(1.5px 1.5px at 12px 108px, rgba(255, 255, 255, 0.85), transparent 100%),
+    radial-gradient(1px 1px at 204px 96px, rgba(226, 236, 255, 0.75), transparent 100%),
+    radial-gradient(1.2px 1.2px at 120px 12px, rgba(255, 255, 255, 0.8), transparent 100%),
+    radial-gradient(1px 1px at 62px 20px, rgba(255, 255, 255, 0.62), transparent 100%),
+    radial-gradient(1.3px 1.3px at 150px 202px, rgba(255, 255, 255, 0.7), transparent 100%),
+    radial-gradient(1px 1px at 88px 198px, rgba(216, 229, 255, 0.75), transparent 100%),
+    radial-gradient(1px 1px at 200px 152px, rgba(255, 255, 255, 0.55), transparent 100%),
+    radial-gradient(1.1px 1.1px at 16px 60px, rgba(226, 236, 255, 0.6), transparent 100%),
+    radial-gradient(130% 95% at 20% 10%, rgba(74, 100, 184, 0.30), transparent 58%),
+    radial-gradient(120% 95% at 86% 92%, rgba(98, 68, 158, 0.24), transparent 60%),
+    linear-gradient(168deg, #101a3c 0%, #0a1128 52%, #0c1434 100%);
+  border: 1px solid rgba(158, 188, 240, 0.22);
   border-radius: 16px; padding: 4px;
   cursor: grab;             /* 可拖拽旋转球体 */
   touch-action: none;       /* 触屏/触控笔拖球走 pointer 捕获，不触发页面滚动 */

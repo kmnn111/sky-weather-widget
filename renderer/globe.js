@@ -239,10 +239,10 @@
       </g>
       <g id="gMoon" class="g-moonwrap">
         <circle class="g-halo" r="26" fill="url(#gMoonHalo)" style="animation-duration:4.5s"/>
-        <circle r="11" fill="#3a4665"/>
+        <circle r="11" fill="#3d4b6e" stroke="rgba(212,226,250,0.5)" stroke-width="1.2"/>
         <path id="gMoonLit" fill="#fdf7e8"></path>
       </g>
-      <g id="gStars" fill="#b9c9e2">
+      <g id="gStars" fill="#d4e2f8">
         <circle class="g-star" cx="300" cy="42" r="1.6"/><circle class="g-star" cx="330" cy="120" r="1.3" style="animation-delay:.7s"/>
         <circle class="g-star" cx="312" cy="196" r="1.7" style="animation-delay:1.3s"/><circle class="g-star" cx="338" cy="268" r="1.3" style="animation-delay:1.9s"/>
         <circle class="g-star" cx="292" cy="318" r="1.6" style="animation-delay:.4s"/><circle class="g-star" cx="216" cy="342" r="1.3" style="animation-delay:2.2s"/>
@@ -416,6 +416,18 @@
     return `M 0 ${-r} A ${r} ${r} 0 0 ${outerSweep} 0 ${r} A ${rx} ${r} 0 0 ${innerSweep} 0 ${-r} Z`;
   }
 
+  // 天体「位置幽灵」：下山后保留低透明度暗影提示方位（否则会被误认为没显示的 bug），
+  // 平滑降为暗影常显，深夜也保留 0.26 底值——无论昼夜始终能感到它在哪边。
+  // 白天（alt>0）保持全亮原样，不动既有分支。
+  function ghostOpacity(alt) {
+    if (alt > 0) return '1';
+    let o;
+    if (alt > -6) o = 1 - 0.64 * (-alt / 6);            // 地平线 → 0.36 平滑落下
+    else if (alt > -18) o = 0.36;                       // 暗影常显
+    else o = Math.max(0.26, 0.36 - (-alt - 18) * 0.006); // 深夜压到 0.26 为止，不归零
+    return o.toFixed(2);
+  }
+
   function renderFrame() {
     const ms = globeNow();
     // 太阳方向（视坐标）
@@ -426,24 +438,27 @@
     el.term.setAttribute('d', g.line);
     el.termGlow.setAttribute('d', g.line);
 
-    // 太阳：按真实方位绕场景环；高度角 < 0 隐去
+    // 太阳：按真实方位绕场景环；下山后保留「位置幽灵」暗影提示方位
     const sunAlt = altOf('sun', ms, loc.lat, loc.lon);
     const azS = Math.atan2(Sv[0], Sv[1]);          // 自北起算
     el.sun.setAttribute('transform', `translate(${(CX + SUN_RING * Math.sin(azS)).toFixed(1)} ${(CY - SUN_RING * Math.cos(azS)).toFixed(1)})`);
-    el.sun.setAttribute('opacity', sunAlt > -2 ? '1' : '0');
+    const sunOp = ghostOpacity(sunAlt);
+    if (el.sun.getAttribute('opacity') !== sunOp) el.sun.setAttribute('opacity', sunOp);
 
-    // 月亮：出没显隐 + 盈亏
+    // 月亮：出没显隐（下山后同留幽灵）+ 盈亏
     const mb = bodyLatLon('moon', ms);
     const Mv = viewP(pvec(mb.lon, mb.lat));
     const moonAlt = altOf('moon', ms, loc.lat, loc.lon);
     const azM = Math.atan2(Mv[0], Mv[1]);
     el.moon.setAttribute('transform', `translate(${(CX + MOON_RING * Math.sin(azM)).toFixed(1)} ${(CY - MOON_RING * Math.cos(azM)).toFixed(1)})`);
-    el.moon.setAttribute('opacity', moonAlt > 0 ? '1' : '0');
+    const moonOp = ghostOpacity(moonAlt);
+    if (el.moon.getAttribute('opacity') !== moonOp) el.moon.setAttribute('opacity', moonOp);
     const ill = moonIllum(ms);
     el.moonLit.setAttribute('d', moonLitPath(11, ill.k, ill.waxing));
 
     // 星空：夜间更亮
-    el.stars.setAttribute('opacity', sunAlt > 0 ? '0.35' : '1');
+    const starOp = sunAlt > 0 ? '0.35' : '1';
+    if (el.stars.getAttribute('opacity') !== starOp) el.stars.setAttribute('opacity', starOp);
 
     // 定位点昼夜变色 + 越晨昏线闪现
     const day = sunAlt > 0;
