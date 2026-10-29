@@ -5,7 +5,7 @@
 const FX = (() => {
   let canvas, ctx, W = 0, H = 0;
   let particles = [], mode = 'clear', night = false;
-  let flash = 0, nextFlash = 0, rafId = null, frameParity = false;
+  let flash = 0, nextFlash = 0, rafId = null;
 
   /* ---------- 天空渐变（吉卜力水彩色） ---------- */
   const PHASES = {
@@ -139,12 +139,7 @@ const FX = (() => {
   function tick(t) {
     rafId = null;
     if (!ctx || suspended || document.hidden) return;
-    // 仅极慢模式（晴/雾）隔帧绘制省电；多云/雨/雪/雷有快动作（风迹、雨雪），跑满 60fps 更顺
-    const light = mode === 'clear' || mode === 'fog';
-    if (light) {
-      frameParity = !frameParity;
-      if (frameParity) { rafId = requestAnimationFrame(tick); return; }
-    }
+    // 全部天气模式跟随屏幕刷新率（vsync）逐帧绘制，不隔帧、不锁帧
     ctx.clearRect(0, 0, W, H);
     const dpr = window.devicePixelRatio || 1;
 

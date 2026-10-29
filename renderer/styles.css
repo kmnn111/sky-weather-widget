@@ -843,6 +843,7 @@ body.docked .update-banner { display: none !important; }
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 16px; padding: 4px;
   cursor: grab;             /* 可拖拽旋转球体 */
+  touch-action: none;       /* 触屏/触控笔拖球走 pointer 捕获，不触发页面滚动 */
 }
 .g-stage:active { cursor: grabbing; }
 .g-stage svg { display: block; width: 100%; height: auto; }
@@ -876,7 +877,7 @@ body.docked .update-banner { display: none !important; }
 .g-fill {
   position: absolute; left: 0; top: 0; height: 8px; width: 0;
   background: linear-gradient(90deg, #f2b34c, #f09a4e); border-radius: 99px;
-  transition: width 0.5s ease;
+  /* 无过渡：逐帧更新下填充条与「现在」圆点 1:1 同步跟手（scrub 拨动不拖尾） */
 }
 .g-now {
   position: absolute; left: 0; top: -6px; width: 20px; height: 20px;

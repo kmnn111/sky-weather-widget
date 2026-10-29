@@ -5,7 +5,8 @@
  * + 太阳/月亮按真实方位绕场景环移动（月出月落控制显隐）+ 定位点日出日落闪现。
  * 自转两种模式：演示（45 秒/圈，时间流逝）/ 真实（恒星时 1×）。
  * 性能：球体/网格/大洲名称只在切换地点时重算；每帧只重算晨昏线与日月；
- * 真实模式 2 秒一算；滚动 / 收起小窗 / 离屏 / 隐藏窗口时暂停。
+ * 渲染节奏跟随屏幕刷新率（vsync），不做人为帧率上限；
+ * 滚动 / 收起小窗 / 离屏 / 隐藏窗口时暂停。
  */
 (() => {
   const NS = 'http://www.w3.org/2000/svg';
@@ -166,10 +167,11 @@
   let moonTimes = null; // 已废弃：月出月落改由 renderPanel 按模拟日动态推算
   let speed = 1;             // 1=真实，DEMO_SPEED=演示
   let base = Date.now(), epoch = Date.now();
-  let suspended = false, onScreen = true, lastGeo = 0, raf = 0;
+  let suspended = false, onScreen = true, raf = 0;
+  let lastScrollAct = -1e9;  // 最近一次 #widget 滚动时刻（loop 滚动暂停判定，比 .scrolling 类自愈）
   let lastDay = null, glintTimer = 0;
   let view = { lat: 30.173, lon: 121.262 };  // 相机对准点（可被鼠标拖拽旋转）
-  let dragging = false, scrubbing = false, geoDirty = false;
+  let dragging = false, scrubbing = false, geoDirty = false, frameDirty = false;
   const geo = {};            // 静态几何元素
 
   const globeNow = () => base + (Date.now() - epoch) * speed;
@@ -468,19 +470,28 @@
   /* ================= 信息栏（每 30 秒刷新） ================= */
   // 取「模拟时刻所在自然日」的日出日落：API 的 times 仅当与模拟同一天才采用（权威值），
   // 否则按模拟日期天文推算——否则演示自转越过当天后，进度条会永久卡死在端点、不随翻天复位。
+  // 按「模拟日 + 地点 + times 版本」缓存：逐帧渲染下 riseSet 的 144 步扫描不必每帧重来。
+  let riseCache = { key: '', sr: null, ss: null };
   function dayRiseSet(ms) {
+    const d = new Date(ms);
+    const key = d.getFullYear() + '/' + d.getMonth() + '/' + d.getDate()
+      + '|' + loc.lat + ',' + loc.lon
+      + '|' + (times && times.sunrise ? times.sunrise.getTime() : 0);
+    if (riseCache.key === key) return riseCache;
     const rs = riseSet('sun', ms, loc.lat, loc.lon);
     let sr = rs.rise || null, ss = rs.set || null;
     if (times && times.sunrise && times.sunset) {
-      const a = new Date(times.sunrise.getTime()), b = new Date(ms);
-      if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()) {
+      const a = new Date(times.sunrise.getTime());
+      if (a.getFullYear() === d.getFullYear() && a.getMonth() === d.getMonth() && a.getDate() === d.getDate()) {
         sr = times.sunrise.getTime(); ss = times.sunset.getTime();
       }
     }
-    return { sr, ss };
+    riseCache = { key, sr, ss };
+    return riseCache;
   }
 
   function renderPanel() {
+    if (!loc) return;
     const ms = globeNow();
     const now = new Date(ms);
     const lat = loc.lat, lon = loc.lon;
@@ -512,18 +523,26 @@
   }
 
   /* ================= 昼夜进度条（逐帧更新，供拖动 scrub） ================= */
+  // 逐帧更新但只在值变化时写 DOM：真实自转静止时零写入，避免无谓样式重算
   function updateBar() {
     const ms = globeNow();
     const now = new Date(ms);
     const { sr, ss } = dayRiseSet(ms);
-    el.endA.textContent = '日出 ' + hhmm(sr);
-    el.endB.textContent = '日落 ' + hhmm(ss);
+    const endA = '日出 ' + hhmm(sr), endB = '日落 ' + hhmm(ss);
+    if (el.endA.textContent !== endA) el.endA.textContent = endA;
+    if (el.endB.textContent !== endB) el.endB.textContent = endB;
     if (sr && ss) {
       const pct = Math.min(1, Math.max(0, (ms - sr) / (ss - sr)));
-      el.fill.style.width = (pct * 100).toFixed(1) + '%';
-      el.nowDot.style.left = `calc(${(pct * 100).toFixed(1)}% - 9px)`;
-      el.nowLab.style.left = (pct * 100).toFixed(1) + '%';
-      el.nowLab.textContent = `现在 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const pc = (pct * 100).toFixed(1);
+      const w = pc + '%';
+      if (el.fill.style.width !== w) el.fill.style.width = w;
+      const dot = `calc(${pc}% - 9px)`;
+      if (el.nowDot.style.left !== dot) el.nowDot.style.left = dot;
+      // 「现在」标签中心钳在 8%~92%：贴近端点时文字不溢出卡片被截断（圆点仍精确跟随）
+      const lw = Math.min(92, Math.max(8, pct * 100)).toFixed(1) + '%';
+      if (el.nowLab.style.left !== lw) el.nowLab.style.left = lw;
+      const lab = `现在 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      if (el.nowLab.textContent !== lab) el.nowLab.textContent = lab;
     }
     return { sr, ss };
   }
@@ -538,7 +557,7 @@
     if (!sr || !ss) return;
     const pct = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
     base = sr + pct * (ss - sr); epoch = Date.now();
-    lastGeo = 0;
+    frameDirty = true;   // 用户输入的脏帧必画（不被任何暂停判定吃掉）
   }
 
   // 切换自转模式。切回「真实自转」= 一键复位：
@@ -554,25 +573,25 @@
       base = globeNow(); epoch = Date.now();   // 演示从当前时刻起加速流逝
     }
     localStorage.setItem('globeSpeed', real ? 'real' : 'demo');
-    if (el.marker) { renderStatic(); renderPanel(); lastGeo = 0; }
+    if (el.marker) { renderStatic(); renderPanel(); }
+    frameDirty = true;
   }
 
-  /* ================= 循环 ================= */
+  /* ================= 循环（跟随屏幕刷新率 vsync 逐帧，无人为帧率上限） =================
+     铁律：暂停判定只省「空闲动画」的帧；用户输入（拖球/拨条/切模式）产生的脏帧必画。
+     任何暂停条件偶发失真都不可能再让拖拽「拖不动」——这正是历史上"球体时好时坏"的元凶。 */
   function loop() {
     raf = requestAnimationFrame(loop);
-    const widget = document.getElementById('widget');
-    const scrolling = widget && widget.classList.contains('scrolling');
-    const docked = document.body.classList.contains('docked') && !document.body.classList.contains('expanded');
-    if (suspended || scrolling || docked || document.hidden || !onScreen) return;
-    const now = Date.now();
-    // 拖球 / 拖进度条时逐帧跟手；平时真实模式 2 秒、演示模式 30fps
-    const interactive = dragging || scrubbing;
-    const interval = interactive ? 33 : (speed === 1 ? 2000 : 33);
-    if (now - lastGeo < interval) return;
-    lastGeo = now;
+    if (!loc || document.hidden) return;
+    const inputDirty = geoDirty || frameDirty;
+    // 滚动暂停用「滚动事件时间」判定（240ms 内有过滚动就算滚动中）：
+    // 不依赖 .scrolling 类——类被卡住也不会冻住地球渲染
+    const idlePause = suspended || !onScreen || Date.now() - lastScrollAct < 240;
+    if (idlePause && !inputDirty) return;
     try {
       if (geoDirty) { renderStatic(); geoDirty = false; }
       renderFrame();
+      frameDirty = false;
     } catch (e) { console.error('globe frame', e); }
   }
 
@@ -662,51 +681,72 @@
       sync();
     }
 
-    // 拖拽旋转球体：按住地球拖动 → 相机跟手 360° 旋转，昼夜/日月/大陆/标签实时跟随
-    // lastX/lastY 提升到 init 作用域：window mousemove 与 stage mousedown 共用
-    let lastX = 0, lastY = 0;
+    // 拖拽旋转球体 / 拖动昼夜进度条（Pointer Events + 指针捕获）：
+    // - 鼠标 / 触屏 / 触控笔统一走 pointer 事件链，一套逻辑全覆盖；
+    // - setPointerCapture：拖出窗口边界事件继续跟手（窗口边缘不再"拖不动"）；
+    // - 松手 / 取消 / 捕获丢失 / 失焦都必达 release，杜绝「拖拽状态卡住 → 球体乱转」。
+    let lastX = 0, lastY = 0, ptrId = null, captured = false;
     const stage = $('gStage');
+    const release = () => {
+      if (ptrId === null) return;
+      ptrId = null; dragging = false; scrubbing = false; captured = false;
+      const bw = $('gBarWrap');
+      if (bw) bw.classList.remove('scrubbing');
+    };
     if (stage && stage.addEventListener) {
-      stage.addEventListener('mousedown', e => {
+      stage.addEventListener('pointerdown', e => {
         if (e.button !== 0) return;
-        dragging = true; lastX = e.clientX; lastY = e.clientY;
-        e.preventDefault();
+        ptrId = e.pointerId; dragging = true; captured = false;
+        lastX = e.clientX; lastY = e.clientY;
+        try { stage.setPointerCapture(e.pointerId); captured = true; } catch (err) { }
       });
       stage.addEventListener('dblclick', () => {
         if (!loc) return;
         view.lat = loc.lat; view.lon = loc.lon;   // 双击复位：定位点回球心
-        geoDirty = true; lastGeo = 0;
+        geoDirty = true;
       });
     }
 
     // 拖动昼夜进度条 = 时间 scrub（在日出→日落之间来回拨动）
     const barWrap = $('gBarWrap');
     if (barWrap && barWrap.addEventListener) {
-      barWrap.addEventListener('mousedown', e => {
+      barWrap.addEventListener('pointerdown', e => {
         if (e.button !== 0) return;
-        scrubbing = true; scrubTo(e.clientX);
-        e.preventDefault();
+        ptrId = e.pointerId; scrubbing = true; captured = false;
+        barWrap.classList.add('scrubbing');   // 拨动中关闭宽度过渡：填充条 1:1 跟手
+        try { barWrap.setPointerCapture(e.pointerId); captured = true; } catch (err) { }
+        scrubTo(e.clientX);
       });
     }
 
     // 拖球/拖进度条的移动与松手挂在 window 上：滑出元素也不丢事件
     if (window.addEventListener) {
-      window.addEventListener('mousemove', e => {
+      window.addEventListener('pointermove', e => {
+        if (ptrId === null || e.pointerId !== ptrId) return;
+        // 捕获生效时 pointerup/pointercancel/lostpointercapture 必达（含松手丢失场景），
+        // 不看 e.buttons 自愈——合成输入/个别设备的杂散 move 会带 buttons=0，误杀拖拽。
+        // 仅当捕获失败（退化为普通事件链）时，才用按钮状态兜底防拖拽卡死。
+        if (!captured && !(e.buttons & 1)) { release(); return; }
         if (dragging && stage) {
           const dx = e.clientX - lastX, dy = e.clientY - lastY;
           lastX = e.clientX; lastY = e.clientY;
           view.lon -= dx * 0.45;                       // 拖动方向与球面相反
           view.lat = Math.max(-85, Math.min(85, view.lat + dy * 0.45));
-          geoDirty = true; lastGeo = 0;
+          geoDirty = true;
         }
         if (scrubbing) scrubTo(e.clientX);
       });
-      const release = () => {
-        if (dragging) { dragging = false; }
-        if (scrubbing) { scrubbing = false; }
-      };
-      window.addEventListener('mouseup', release);
+      window.addEventListener('pointerup', release);
+      window.addEventListener('pointercancel', release);
       window.addEventListener('blur', release);
+      if (stage) stage.addEventListener('lostpointercapture', release);
+      if (barWrap) barWrap.addEventListener('lostpointercapture', release);
+    }
+
+    // 滚动活动时间：loop 的滚动暂停判定（自愈式，不依赖 .scrolling 类）
+    const widgetEl = $('widget');
+    if (widgetEl && widgetEl.addEventListener) {
+      widgetEl.addEventListener('scroll', () => { lastScrollAct = Date.now(); }, { passive: true });
     }
 
     // 离屏暂停
@@ -714,6 +754,19 @@
       new IntersectionObserver(en => { onScreen = en[0].isIntersecting; }, { threshold: 0 })
         .observe($('gStage'));
     }
+
+    // 可见性看门狗：吸顶收起是 visibility:hidden（IntersectionObserver 不报离屏），
+    // IPC/类名状态偶发失真也会把「空闲动画」整块冻住（用户实测球体时好时坏的元凶之一）。
+    // 每 2 秒按真实几何+计算样式复核一次并纠偏自愈；拖拽则由 loop 的「脏帧必画」兜底。
+    setInterval(() => {
+      const st = $('gStage');
+      if (!st || !st.getBoundingClientRect) return;
+      const r = st.getBoundingClientRect();
+      const vis = r.width > 0 && r.bottom > 0 && r.top < (window.innerHeight || 800)
+        && getComputedStyle(st).visibility !== 'hidden';
+      if (vis !== onScreen) onScreen = vis;
+      if (vis && suspended) suspended = false;   // 明明可见却被误暂停 → 自愈恢复
+    }, 2000);
 
     setInterval(renderPanel, 30000);
     setInterval(updateLabelColors, 120000);
@@ -737,7 +790,7 @@
       lastDay = null;
     }
     if (el.sunrise) renderPanel();
-    lastGeo = 0;
+    frameDirty = true;
   }
 
   function setSuspended(v) { suspended = !!v; }
@@ -750,7 +803,15 @@
       getView: () => ({ lat: view.lat, lon: view.lon }),
       getSpeed: () => speed,
       setSimTime: t => { base = t; epoch = Date.now(); },
-      renderNow: () => { renderFrame(); }
+      renderNow: () => { renderFrame(); },
+      isDragActive: () => dragging || scrubbing,
+      getPause: () => ({
+        suspended,
+        scrolling: Date.now() - lastScrollAct < 240,
+        docked: document.body.classList.contains('docked') && !document.body.classList.contains('expanded'),
+        hidden: document.hidden,
+        onScreen
+      })
     }
   };
 })();

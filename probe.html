@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<body>
+<div id="t" style="width:200px;height:200px;background:#eee"></div>
+<script>
+window.log = [];
+var t = document.getElementById('t');
+t.addEventListener('pointerdown', e => log.push('pdown btns=' + e.buttons + ' id=' + e.pointerId));
+t.addEventListener('pointermove', e => log.push('pmove btns=' + e.buttons));
+t.addEventListener('pointerup', e => log.push('pup btns=' + e.buttons));
+t.addEventListener('dblclick', () => log.push('dblclick'));
+</script>
+</body>
+</html>

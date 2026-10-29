@@ -807,6 +807,17 @@
       const now = Date.now();
       if (now - hoverTick > 300) { hoverTick = now; sky.dockHover(true); }
     });
+    // 按住鼠标拖拽期间（拖球/拖进度条/横滑）也算「正在使用」：
+    // 按住不动（尤其停在窗口边缘）不该触发悬停收起，否则拖拽中途整窗缩回小窗
+    let holdTick = 0;
+    const endHold = () => { clearInterval(holdTick); holdTick = 0; };
+    document.addEventListener('pointerdown', () => {
+      if (!document.body.classList.contains('docked') || holdTick) return;
+      holdTick = setInterval(() => sky.dockHover(true), 250);
+    });
+    document.addEventListener('pointerup', endHold);
+    document.addEventListener('pointercancel', endHold);
+    window.addEventListener('blur', endHold);
     try {
       const ver = await sky.version();
       $('panelVersion').textContent = 'v' + ver;

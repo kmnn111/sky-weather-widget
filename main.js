@@ -499,7 +499,9 @@ function createWindow() {
     }, 11000);
   }
 
-  // --shot-globe：昼夜地球交互自检（拖球旋转 / 进度条拨动 / 真实自转一键复位）
+  // --shot-globe：昼夜地球交互自检（真实输入注入 sendInputEvent）
+  // 合成 MouseEvent 绕过命中测试/指针捕获/按钮状态，正是「自检全过、真机拖不动」的盲区；
+  // 这里走 webContents.sendInputEvent，与真实鼠标同一条输入管线，渲染层收到的是真 pointer 事件。
   if (process.argv.includes('--shot-globe')) {
     const shoot = async (name, rect) => {
       const img = rect ? await win.webContents.capturePage(rect) : await win.webContents.capturePage();
@@ -507,82 +509,96 @@ function createWindow() {
       fs.writeFileSync(out, img.toPNG());
       console.log('[shot] saved', out);
     };
+    // 真实输入一步：发事件 + 等渲染进程消化
+    const tap = (ev, wait = 110) => new Promise(r => { win.webContents.sendInputEvent(ev); setTimeout(r, wait); });
+    const read = js => win.webContents.executeJavaScript(`JSON.stringify(${js})`);
+    const passes = [];
+    const check = (name, ok, detail) => { passes.push(!!ok); console.log('[globe-test]', name, detail, ok ? 'PASS' : 'FAIL'); };
     setTimeout(async () => {
       try {
-        // 0. 滚到昼夜地球卡片，取卡片矩形用于局部截图
-        const rect = await win.webContents.executeJavaScript(`(() => {
+        // 0. 退出吸顶态（shot 模式悬停被冻结）：完整窗口 + 全形状，真实输入才够得着全部控件
+        undockWindow();
+        await new Promise(r => setTimeout(r, 500));
+        // 滚到昼夜地球卡片，取卡片/球体/进度条矩形（CSS px = sendInputEvent 的 DIP）
+        const geo0 = JSON.parse(await win.webContents.executeJavaScript(`(() => {
           const m = document.getElementById('globeMount');
           m.scrollIntoView({ block: 'center' });
-          const r = m.getBoundingClientRect();
-          return { x: Math.max(0, Math.round(r.x) - 8), y: Math.max(0, Math.round(r.y) - 8), width: Math.round(r.width) + 16, height: Math.round(r.height) + 16 };
-        })()`);
-        await new Promise(r => setTimeout(r, 600));
+          const sr = m.getBoundingClientRect();
+          const st = document.getElementById('gStage').getBoundingClientRect();
+          const bw = document.getElementById('gBarWrap').getBoundingClientRect();
+          window.__probe = { down: 0, move: 0, up: 0 };
+          window.addEventListener('pointerdown', () => window.__probe.down++);
+          window.addEventListener('pointermove', () => window.__probe.move++);
+          window.addEventListener('pointerup', () => window.__probe.up++);
+          return JSON.stringify({
+            card: { x: Math.max(0, Math.round(sr.x) - 8), y: Math.max(0, Math.round(sr.y) - 8), width: Math.round(sr.width) + 16, height: Math.round(sr.height) + 16 },
+            stage: { x: st.x, y: st.y, w: st.width, h: st.height },
+            bar: { x: bw.x, y: bw.y, w: bw.width, h: bw.height }
+          });
+        })()`));
+        const rect = geo0.card;
+        await new Promise(r => setTimeout(r, 700));
         await shoot('g-1-initial.png', rect);
-        const s0 = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify({ view: Globe._debug.getView(), night: document.getElementById('gNight').getAttribute('d'), fill: document.getElementById('gFill').style.width })`));
+        const s0 = JSON.parse(await read(`{ view: Globe._debug.getView(), night: document.getElementById('gNight').getAttribute('d'), fill: document.getElementById('gFill').style.width, pause: Globe._debug.getPause() }`));
+        check('pause-clear', s0.pause.onScreen && !s0.pause.docked && !s0.pause.hidden && !s0.pause.scrolling && !s0.pause.suspended, JSON.stringify(s0.pause));
 
-        // 1. 拖球旋转：视角变化 + 昼夜覆盖随动 + 双击复位视角
-        await win.webContents.executeJavaScript(`(() => {
-          const st = document.getElementById('gStage');
-          const r = st.getBoundingClientRect();
-          const opt = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
-          st.dispatchEvent(new MouseEvent('mousedown', opt(r.x + r.width / 2, r.y + r.height / 2)));
-          window.dispatchEvent(new MouseEvent('mousemove', opt(r.x + r.width / 2 + 60, r.y + r.height / 2)));
-          window.dispatchEvent(new MouseEvent('mousemove', opt(r.x + r.width / 2 + 130, r.y + r.height / 2 - 30)));
-          window.dispatchEvent(new MouseEvent('mouseup', opt(r.x + r.width / 2 + 130, r.y + r.height / 2 - 30)));
-        })()`);
-        await new Promise(r => setTimeout(r, 400));
-        const s1 = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify({ view: Globe._debug.getView(), night: document.getElementById('gNight').getAttribute('d') })`));
+        // 1. 真实拖球 360°：视角变化 + 昼夜覆盖随动 + 松手后拖拽状态归零
+        const cx = Math.round(geo0.stage.x + geo0.stage.w / 2), cy = Math.round(geo0.stage.y + geo0.stage.h / 2);
+        await tap({ type: 'mouseDown', x: cx, y: cy, button: 'left', clickCount: 1 });
+        const mid = JSON.parse(await read(`Globe._debug.isDragActive()`));
+        for (const [dx, dy] of [[60, 0], [130, -30], [170, -50]]) {
+          await tap({ type: 'mouseMove', x: cx + dx, y: cy + dy, modifiers: ['isLeftButtonDown'] });
+        }
+        await tap({ type: 'mouseUp', x: cx + 170, y: cy - 50, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 350));
+        const s1 = JSON.parse(await read(`{ view: Globe._debug.getView(), night: document.getElementById('gNight').getAttribute('d'), drag: Globe._debug.isDragActive(), probe: window.__probe }`));
         await shoot('g-2-dragged.png', rect);
         const dLon = Math.abs(s1.view.lon - s0.view.lon);
-        console.log('[globe-test] drag dLon=' + dLon.toFixed(1) + ' nightChanged=' + (s1.night !== s0.night), (dLon > 30 && s1.night !== s0.night) ? 'PASS' : 'FAIL');
-        // 双击复位视角
-        await win.webContents.executeJavaScript(`document.getElementById('gStage').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))`);
-        await new Promise(r => setTimeout(r, 300));
-        const s2 = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify(Globe._debug.getView())`));
+        check('drag-rotate', dLon > 30 && s1.night !== s0.night && mid && !s1.drag && s1.probe.down >= 1 && s1.probe.up >= 1,
+          'dLon=' + dLon.toFixed(1) + ' nightChanged=' + (s1.night !== s0.night) + ' midDrag=' + mid + ' released=' + !s1.drag + ' probe=' + JSON.stringify(s1.probe));
+
+        // 1b. 真实双击复位视角（clickCount 1→2）
+        await tap({ type: 'mouseDown', x: cx, y: cy, button: 'left', clickCount: 1 }, 70);
+        await tap({ type: 'mouseUp', x: cx, y: cy, button: 'left', clickCount: 1 }, 70);
+        await tap({ type: 'mouseDown', x: cx, y: cy, button: 'left', clickCount: 2 }, 70);
+        await tap({ type: 'mouseUp', x: cx, y: cy, button: 'left', clickCount: 2 });
+        await new Promise(r => setTimeout(r, 350));
+        const s2 = JSON.parse(await read(`Globe._debug.getView()`));
         const back = Math.abs(s2.lat - s0.view.lat) < 0.01 && Math.abs(s2.lon - s0.view.lon) < 0.01;
-        console.log('[globe-test] dblclick reset view=' + JSON.stringify(s2), back ? 'PASS' : 'FAIL');
+        check('dblclick-reset', back, 'view=' + JSON.stringify(s2));
 
-        // 2. 进度条拨动：填充宽度变化
-        const scrubRes = JSON.parse(await win.webContents.executeJavaScript(`(() => {
-          const wrap = document.getElementById('gBarWrap');
-          const r = wrap.getBoundingClientRect();
-          const w0 = document.getElementById('gFill').style.width;
-          const opt = (x) => ({ bubbles: true, cancelable: true, clientX: x, clientY: r.y + r.height / 2, button: 0 });
-          wrap.dispatchEvent(new MouseEvent('mousedown', opt(r.x + r.width * 0.85)));
-          window.dispatchEvent(new MouseEvent('mousemove', opt(r.x + r.width * 0.2)));
-          window.dispatchEvent(new MouseEvent('mouseup', opt(r.x + r.width * 0.2)));
-          return JSON.stringify({ w0, w1: document.getElementById('gFill').style.width });
-        })()`));
-        await new Promise(r => setTimeout(r, 400));
+        // 2. 真实拖动进度条：填充宽度 1:1 跟手（无过渡），松手后 scrub 状态归零
+        const bx = Math.round(geo0.bar.x + geo0.bar.w * 0.85), by = Math.round(geo0.bar.y + geo0.bar.h / 2);
+        const tx = Math.round(geo0.bar.x + geo0.bar.w * 0.2);
+        await tap({ type: 'mouseDown', x: bx, y: by, button: 'left', clickCount: 1 });
+        await tap({ type: 'mouseMove', x: tx, y: by, modifiers: ['isLeftButtonDown'] });
+        await tap({ type: 'mouseUp', x: tx, y: by, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 350));
+        const s3 = JSON.parse(await read(`{ fill: document.getElementById('gFill').style.width, drag: Globe._debug.isDragActive() }`));
         await shoot('g-3-scrub.png', rect);
-        console.log('[globe-test] scrub ' + JSON.stringify(scrubRes), scrubRes.w0 !== scrubRes.w1 ? 'PASS' : 'FAIL');
+        const pct = parseFloat(s3.fill);
+        check('scrub-follow', Math.abs(pct - 20) <= 3 && !s3.drag, 'fill=' + s3.fill + ' released=' + !s3.drag);
 
-        // 3. 演示模式下弄脏状态（拖球+拨条）→ 点「真实自转」一键全复位
+        // 3. 演示模式弄脏状态（真实拖球+真实拨条）→ 点「真实自转」一键全复位
         await win.webContents.executeJavaScript(`(() => { if (Globe._debug.getSpeed() === 1) document.getElementById('globeMode').click(); })()`);
-        await win.webContents.executeJavaScript(`(() => {
-          const st = document.getElementById('gStage');
-          const r = st.getBoundingClientRect();
-          const opt = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
-          st.dispatchEvent(new MouseEvent('mousedown', opt(r.x + 80, r.y + 80)));
-          window.dispatchEvent(new MouseEvent('mousemove', opt(r.x + 180, r.y + 40)));
-          window.dispatchEvent(new MouseEvent('mouseup', opt(r.x + 180, r.y + 40)));
-          const wrap = document.getElementById('gBarWrap');
-          const b = wrap.getBoundingClientRect();
-          wrap.dispatchEvent(new MouseEvent('mousedown', opt(b.x + b.width * 0.92, b.y + 4)));
-          window.dispatchEvent(new MouseEvent('mouseup', opt(b.x + b.width * 0.92, b.y + 4)));
-        })()`);
+        await tap({ type: 'mouseDown', x: cx, y: cy, button: 'left', clickCount: 1 });
+        await tap({ type: 'mouseMove', x: cx + 100, y: cy - 40, modifiers: ['isLeftButtonDown'] });
+        await tap({ type: 'mouseUp', x: cx + 100, y: cy - 40, button: 'left', clickCount: 1 });
+        await tap({ type: 'mouseDown', x: Math.round(geo0.bar.x + geo0.bar.w * 0.92), y: by, button: 'left', clickCount: 1 });
+        await tap({ type: 'mouseUp', x: Math.round(geo0.bar.x + geo0.bar.w * 0.92), y: by, button: 'left', clickCount: 1 });
         await new Promise(r => setTimeout(r, 500));
         await shoot('g-4-demo-dirty.png', rect);
-        const dirty = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify({ view: Globe._debug.getView(), speed: Globe._debug.getSpeed(), fill: document.getElementById('gFill').style.width })`));
+        const dirty = JSON.parse(await read(`{ view: Globe._debug.getView(), speed: Globe._debug.getSpeed(), fill: document.getElementById('gFill').style.width }`));
         await win.webContents.executeJavaScript(`document.getElementById('globeMode').click()`);
         await new Promise(r => setTimeout(r, 500));
-        const reset = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify({ view: Globe._debug.getView(), speed: Globe._debug.getSpeed(), fill: document.getElementById('gFill').style.width, lab: document.getElementById('gNowLab').textContent, btn: document.getElementById('globeMode').textContent })`));
+        const reset = JSON.parse(await read(`{ view: Globe._debug.getView(), speed: Globe._debug.getSpeed(), fill: document.getElementById('gFill').style.width, lab: document.getElementById('gNowLab').textContent, btn: document.getElementById('globeMode').textContent, drag: Globe._debug.isDragActive() }`));
         await shoot('g-5-reset.png', rect);
         const nowD = new Date();
         const expectLab = '现在 ' + String(nowD.getHours()).padStart(2, '0') + ':' + String(nowD.getMinutes()).padStart(2, '0');
         const viewOk = Math.abs(reset.view.lat - s0.view.lat) < 0.01 && Math.abs(reset.view.lon - s0.view.lon) < 0.01;
         const timeOk = reset.lab === expectLab || reset.lab === '现在 ' + nowD.getHours() + ':' + String(nowD.getMinutes()).padStart(2, '0');
-        console.log('[globe-test] reset ' + JSON.stringify(reset), (reset.speed === 1 && viewOk && timeOk && reset.btn === '真实自转') ? 'PASS' : 'FAIL');
+        check('demo-reset', reset.speed === 1 && viewOk && timeOk && reset.btn === '真实自转' && !reset.drag,
+          JSON.stringify(reset) + ' dirtyWas=' + JSON.stringify(dirty));
 
         // 4. 演示自转连拍两帧：肉眼核对夜区平滑无长条/抖动
         await win.webContents.executeJavaScript(`(() => { if (Globe._debug.getSpeed() === 1) document.getElementById('globeMode').click(); })()`);
@@ -590,6 +606,7 @@ function createWindow() {
         await shoot('g-6-demo-a.png', rect);
         await new Promise(r => setTimeout(r, 1200));
         await shoot('g-7-demo-b.png', rect);
+        console.log('[globe-test] DONE', passes.every(Boolean) ? 'PASS' : 'FAIL', '(' + passes.filter(Boolean).length + '/' + passes.length + ')');
       } catch (e) { console.error('[shot] failed', e); }
       app.exit(0);
     }, 8000);
