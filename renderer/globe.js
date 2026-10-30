@@ -687,7 +687,10 @@
 
   /* ================= 循环（跟随屏幕刷新率 vsync 逐帧，无人为帧率上限） =================
      铁律：暂停判定只省「空闲动画」的帧；用户输入（拖球/拨条/切模式）产生的脏帧必画。
-     任何暂停条件偶发失真都不可能再让拖拽「拖不动」——这正是历史上"球体时好时坏"的元凶。 */
+     任何暂停条件偶发失真都不可能再让拖拽「拖不动」——这正是历史上"球体时好时坏"的元凶。
+     真实自转（speed===1）的球面内容分钟级才可见变化：无脏帧时限 ~5 帧/秒即可（输出无差别），
+     演示自转 / 任何输入脏帧仍逐帧 vsync 全速——省掉挂机时几乎静止画面的全量重绘（发热/耗电大头）。 */
+  let lastDraw = 0;
   function loop() {
     raf = requestAnimationFrame(loop);
     if (!loc || document.hidden) return;
@@ -696,6 +699,9 @@
     // 不依赖 .scrolling 类——类被卡住也不会冻住地球渲染
     const idlePause = suspended || !onScreen || Date.now() - lastScrollAct < 240;
     if (idlePause && !inputDirty) return;
+    const now = performance.now();
+    if (speed === 1 && !inputDirty && now - lastDraw < 200) return;
+    lastDraw = now;
     try {
       if (geoDirty) { renderStatic(); geoDirty = false; }
       renderFrame();
@@ -712,10 +718,10 @@
         <div class="g-stage" id="gStage"></div>
         <div class="g-col">
           <div class="g-tiles">
-            <div class="g-tile"><div class="g-t">日出</div><div class="g-v" id="gSunrise">—:—</div></div>
-            <div class="g-tile"><div class="g-t">日落</div><div class="g-v" id="gSunset">—:—</div></div>
-            <div class="g-tile"><div class="g-t">月出</div><div class="g-v" id="gMoonrise">—:—</div></div>
-            <div class="g-tile"><div class="g-t">月落</div><div class="g-v" id="gMoonset">—:—</div></div>
+            <div class="g-tile t-sunrise"><div class="g-t">日出</div><div class="g-v" id="gSunrise">—:—</div></div>
+            <div class="g-tile t-sunset"><div class="g-t">日落</div><div class="g-v" id="gSunset">—:—</div></div>
+            <div class="g-tile t-moonrise"><div class="g-t">月出</div><div class="g-v" id="gMoonrise">—:—</div></div>
+            <div class="g-tile t-moonset"><div class="g-t">月落</div><div class="g-v" id="gMoonset">—:—</div></div>
           </div>
           <div class="g-chips"><span class="chip" id="gState">—</span><span class="chip" id="gCountdown">—</span></div>
           <div class="g-chips"><span class="chip" id="gDaylen">—</span><span class="chip" id="gNoon">—</span></div>

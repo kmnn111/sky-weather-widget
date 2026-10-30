@@ -390,6 +390,42 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
 }
 .chip b { color: var(--ink); font-weight: normal; }
 
+/* ===== 分钟级降水条（hero 内紧凑单条，与 statRow 同级整合） ===== */
+.mm-wrap { margin-top: 11px; }
+.mm-head { display: flex; align-items: baseline; gap: 8px; }
+.mm-title { font-size: 10.5px; color: var(--ink-soft); letter-spacing: 0.5px; }
+.mm-sum { font-size: 12px; color: var(--ink); font-weight: 500; }
+.mm-bars {
+  display: flex; align-items: flex-end; gap: 6px;
+  height: 34px; margin-top: 6px; padding: 0 2px;
+}
+.mm-bar {
+  flex: 1; border-radius: 3px 3px 2px 2px; min-height: 2px;
+  transition: height .4s ease;
+}
+.mm-bar.dry { background: rgba(120, 100, 80, 0.14); }
+.mm-bar.rain { background: linear-gradient(180deg, #79b8e8, #5b8fd4); }
+.mm-bar.snow { background: linear-gradient(180deg, #cfe4f4, #a9c8de); }
+.mm-axis {
+  display: flex; justify-content: space-between;
+  font-size: 9.5px; color: var(--ink-soft); margin-top: 3px; opacity: 0.75;
+}
+
+/* ===== 24h 温度/降水趋势曲线（整合进逐时预报卡） ===== */
+.trend-wrap { margin: 4px 0 8px; }
+.trend-wrap svg { display: block; overflow: visible; }
+.tr-line {
+  fill: none; stroke: var(--sun-deep); stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 2px 4px rgba(232, 145, 44, 0.28));
+}
+.tr-pop { fill: rgba(91, 143, 212, 0.35); }
+.tr-dot { fill: #fff; stroke: var(--sun-deep); stroke-width: 1.8; }
+.tr-lab {
+  font-size: 10px; fill: var(--ink-soft); text-anchor: middle;
+  font-family: inherit;
+}
+
 .loc-bar {
   display: flex; align-items: center; gap: 10px;
   margin-top: 12px; padding-top: 11px;
@@ -892,6 +928,27 @@ body.docked .update-banner { display: none !important; }
   font-size: 17px; font-weight: 600; color: var(--ink); line-height: 1.35;
   font-variant-numeric: tabular-nums;
 }
+/* 日出/日落/月出/月落 淡彩氛围底色：各自对应时刻的天光颜色（浅到不抢数据） */
+.g-tile.t-sunrise {
+  background: linear-gradient(135deg, rgba(255, 214, 150, 0.5), rgba(255, 236, 200, 0.32));
+  border-color: rgba(250, 190, 110, 0.45);
+}
+.g-tile.t-sunrise .g-t { color: #b97a22; }
+.g-tile.t-sunset {
+  background: linear-gradient(135deg, rgba(255, 170, 140, 0.46), rgba(255, 210, 190, 0.3));
+  border-color: rgba(240, 150, 120, 0.42);
+}
+.g-tile.t-sunset .g-t { color: #c25f3c; }
+.g-tile.t-moonrise {
+  background: linear-gradient(135deg, rgba(165, 185, 245, 0.44), rgba(215, 225, 255, 0.3));
+  border-color: rgba(150, 175, 235, 0.42);
+}
+.g-tile.t-moonrise .g-t { color: #5a6fc0; }
+.g-tile.t-moonset {
+  background: linear-gradient(135deg, rgba(190, 210, 240, 0.42), rgba(235, 242, 255, 0.3));
+  border-color: rgba(175, 195, 230, 0.4);
+}
+.g-tile.t-moonset .g-t { color: #62789f; }
 .g-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .g-chips .chip { padding: 3px 9px; font-size: 10.2px; }
 #gState { background: rgba(250, 220, 170, 0.75); color: #854f0b; border-color: rgba(240, 190, 110, 0.5); }
@@ -1070,6 +1127,14 @@ body.night .alm-detail {
 }
 body.night .chip-y { color: #b8e39c; }
 body.night .chip-j { color: #ffb3a8; }
+body.night .mm-bar.dry { background: rgba(180, 200, 240, 0.12); }
+body.night .mm-bar.rain { background: linear-gradient(180deg, #6fa5d8, #4a76b8); }
+body.night .mm-bar.snow { background: linear-gradient(180deg, #b8cfe4, #8fb0cc); }
+body.night .mm-sum { color: var(--ink); }
+body.night .tr-line { stroke: #ffc470; filter: drop-shadow(0 2px 4px rgba(255, 180, 90, 0.22)); }
+body.night .tr-pop { fill: rgba(130, 170, 230, 0.32); }
+body.night .tr-dot { fill: #101a36; stroke: #ffc470; }
+body.night .tr-lab { fill: rgba(200, 215, 245, 0.85); }
 body.night .alert.orange { color: #ffd9a0; }
 body.night .alert.blue { color: #b9d8ff; }
 body.night .alert.red { color: #ffc4bd; }
@@ -1091,6 +1156,27 @@ body.night .g-tile {
   background: rgba(150, 175, 230, 0.12);
   border-color: rgba(190, 210, 245, 0.2);
 }
+/* 夜色版淡彩：色相保留（日出金橙/日落霞红/月出蓝紫/月落银蓝），压暗融入星空 */
+body.night .g-tile.t-sunrise {
+  background: linear-gradient(135deg, rgba(255, 190, 110, 0.2), rgba(255, 215, 160, 0.1));
+  border-color: rgba(250, 190, 110, 0.35);
+}
+body.night .g-tile.t-sunrise .g-t { color: #f0c98a; }
+body.night .g-tile.t-sunset {
+  background: linear-gradient(135deg, rgba(255, 140, 110, 0.2), rgba(255, 185, 160, 0.1));
+  border-color: rgba(240, 150, 120, 0.32);
+}
+body.night .g-tile.t-sunset .g-t { color: #f5b399; }
+body.night .g-tile.t-moonrise {
+  background: linear-gradient(135deg, rgba(140, 165, 245, 0.22), rgba(190, 205, 255, 0.1));
+  border-color: rgba(150, 175, 235, 0.35);
+}
+body.night .g-tile.t-moonrise .g-t { color: #aebbf2; }
+body.night .g-tile.t-moonset {
+  background: linear-gradient(135deg, rgba(170, 195, 235, 0.2), rgba(210, 225, 255, 0.1));
+  border-color: rgba(175, 195, 230, 0.32);
+}
+body.night .g-tile.t-moonset .g-t { color: #b6c6e6; }
 body.night #gState { background: rgba(250, 200, 120, 0.2); color: #ffd9a0; border-color: rgba(250, 200, 120, 0.35); }
 body.night #gCountdown { background: rgba(140, 190, 250, 0.18); color: #b9dcff; border-color: rgba(150, 195, 240, 0.35); }
 body.night #gDaylen, body.night #gNoon { background: rgba(200, 215, 245, 0.12); color: #c9d4ec; border-color: rgba(200, 215, 245, 0.22); }

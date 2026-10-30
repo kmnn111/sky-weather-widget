@@ -54,6 +54,8 @@
 
       <div class="alert-wrap" id="alertWrap"></div>
       <div class="stat-row" id="statRow"></div>
+      <!-- 分钟级降水条：紧凑单条嵌入 hero，与 statRow 同级（不另起栏目） -->
+      <div class="mm-wrap" id="mmWrap"></div>
 
       <div class="loc-bar no-drag">
         <div class="loc-pin"><span data-ui="pin"></span></div>
@@ -82,6 +84,8 @@
     <!-- 逐 3 小时 -->
     <section class="card">
       <div class="card-title">逐时预报 <em class="sub" id="hourlySub"></em></div>
+      <!-- 24h 温度/降水趋势曲线：整合进逐时预报卡（同一份数据的图形化概览） -->
+      <div class="trend-wrap" id="trendWrap"></div>
       <div class="hourly-scroll" id="hourlyScroll"></div>
     </section>
 
@@ -185,6 +189,10 @@
       <label class="check"><input type="checkbox" id="chkTop" /> 窗口置顶显示</label>
       <label class="check"><input type="checkbox" id="chkAuto" /> 开机自动启动</label>
       <label class="check"><input type="checkbox" id="chkEdgeDock" /> 顶部吸附（拖到屏幕顶端收起为温度小窗，悬停展开）</label>
+
+      <h4>提醒与托盘</h4>
+      <label class="check"><input type="checkbox" id="chkTrayTemp" /> 托盘图标显示实时温度</label>
+      <label class="check"><input type="checkbox" id="chkBrief" /> 天气早晚报（每天 8:00 / 20:00 通知播报）</label>
 
       <button class="wide-btn danger" id="btnQuit">退出程序</button>
 

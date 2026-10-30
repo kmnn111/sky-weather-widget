@@ -17,5 +17,7 @@ contextBridge.exposeInMainWorld('sky', {
   updateInstall: () => ipcRenderer.invoke('update:install'),
   onUpdateState: (cb) => ipcRenderer.on('update:state', (_e, s) => cb && cb(s)),
   dockHover: (inside) => ipcRenderer.send('dock:hover', !!inside),
-  onDockState: (cb) => ipcRenderer.on('dock:state', (_e, s) => cb && cb(s))
+  onDockState: (cb) => ipcRenderer.on('dock:state', (_e, s) => cb && cb(s)),
+  trayTemp: (dataURL) => ipcRenderer.send('tray:temp', dataURL),
+  notify: (title, body) => ipcRenderer.send('notify', { title, body })
 });

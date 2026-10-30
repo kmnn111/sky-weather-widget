@@ -42,6 +42,7 @@
       renderDateLine(now);
       renderPill(); // 跨天时刷新小窗的年月日 / 农历
     }
+    if (now.getSeconds() === 0) checkBrief(); // 整分检查早晚报（8:00 / 20:00 一发即去重）
   }
 
   function renderDateLine(now) {
@@ -83,6 +84,7 @@
     }
     // 日落后整个界面切换到星空/黑夜暗色调（body.night 覆盖主题变量，纯 CSS 过渡）
     document.body.classList.toggle('night', !isDay);
+    updateTrayTemp(); // 昼夜翻转 → 托盘温度图标配色跟着换（fingerprint 保证不重复发 IPC）
     // 精确在日出/日落时刻翻转主题（不必等 60s 轮询或数据刷新）
     clearTimeout(flipTimer);
     if (w && w.daily && w.daily.sunrise && w.daily.sunrise[0] && w.daily.sunset && w.daily.sunset[0]) {
@@ -120,6 +122,10 @@
       ['日出', (d.sunrise[0] || '').slice(11)],
       ['日落', (d.sunset[0] || '').slice(11)]
     ];
+    // 朝晚霞概率：取「下一次」日出/日落所在小时的低/中/高云量推算（不新增栏目，融进 chips）
+    const glow = computeGlow(w, new Date());
+    if (glow.dawn) chips.push(['朝霞', glow.dawn.label]);
+    if (glow.dusk) chips.push(['晚霞', glow.dusk.label]);
     $('statRow').innerHTML = chips.map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('');
 
     const alerts = Weather.buildAlerts(d, w.hourly);
@@ -162,9 +168,200 @@
       </div>`;
     }
     $('hourlyScroll').innerHTML = html;
+    renderTrend(idx); // 24h 趋势曲线：同一份逐时数据的图形概览，嵌在本卡内
     const fu = state.fetchedAt || now;
     $('hourlySub').textContent = `未来24小时 · 更新于 ${pad(fu.getHours())}:${pad(fu.getMinutes())}:${pad(fu.getSeconds())}`;
   }
+
+  /* ---------- 24h 温度/降水趋势曲线（整合进逐时预报卡，只在数据刷新时重建路径） ---------- */
+  function renderTrend(idx) {
+    const el = $('trendWrap');
+    if (!el) return;
+    const w = state.data.weather;
+    const h = w.hourly;
+    const n = Math.min(24, h.time.length - idx);
+    if (n < 4) { el.innerHTML = ''; return; }
+    const temps = [], pops = [];
+    for (let i = 0; i < n; i++) {
+      temps.push(Number(h.temperature_2m[idx + i]) || 0);
+      pops.push(Number(h.precipitation_probability[idx + i]) || 0);
+    }
+    const VW = 424, VH = 86, padT = 14, padB = 16;
+    const tMin = Math.min(...temps), tMax = Math.max(...temps);
+    const span = Math.max(1, tMax - tMin);
+    const x = i => (i / (n - 1)) * VW;
+    const y = t => padT + (1 - (t - tMin) / span) * (VH - padT - padB);
+    // 平滑温度曲线（相邻点中点二次贝塞尔）
+    let dpath = `M${x(0).toFixed(1)},${y(temps[0]).toFixed(1)}`;
+    for (let i = 1; i < n - 1; i++) {
+      const cx = (x(i) + x(i + 1)) / 2, cy = (y(temps[i]) + y(temps[i + 1])) / 2;
+      dpath += ` Q${x(i).toFixed(1)},${y(temps[i]).toFixed(1)} ${cx.toFixed(1)},${cy.toFixed(1)}`;
+    }
+    dpath += ` T${x(n - 1).toFixed(1)},${y(temps[n - 1]).toFixed(1)}`;
+    // 降水概率底柱（0-100% → 12px 底部条带）
+    let bars = '';
+    const bw = Math.max(3, VW / n - 4);
+    for (let i = 0; i < n; i++) {
+      const ph = Math.round((pops[i] / 100) * 12);
+      if (ph > 0) bars += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(VH - padB + 3 - ph).toFixed(1)}" width="${bw.toFixed(1)}" height="${ph}" rx="1.5" class="tr-pop"/>`;
+    }
+    // 端点温度标注（只标首/尾/最高/最低，避免文字堆叠）
+    const marks = [[0, temps[0], 'start'], [n - 1, temps[n - 1], 'end']];
+    let minI = 0, maxI = 0;
+    temps.forEach((t, i) => { if (t < temps[minI]) minI = i; if (t > temps[maxI]) maxI = i; });
+    if (minI > 0 && minI < n - 1) marks.push([minI, temps[minI], 'mid']);
+    if (maxI > 0 && maxI < n - 1 && maxI !== minI) marks.push([maxI, temps[maxI], 'mid']);
+    const dots = marks.map(([i, t, kind]) =>
+      `<circle cx="${x(i).toFixed(1)}" cy="${y(t).toFixed(1)}" r="2.6" class="tr-dot"/>` +
+      (kind === 'mid' ? `<text x="${x(i).toFixed(1)}" y="${(y(t) - 7).toFixed(1)}" class="tr-lab">${Math.round(t)}°</text>` : '')
+    ).join('');
+    el.innerHTML = `<svg viewBox="0 0 ${VW} ${VH}" width="100%" height="${VH}" preserveAspectRatio="none" aria-hidden="true">
+      <path d="${dpath}" class="tr-line"/>${bars}${dots}</svg>`;
+  }
+
+  /* ---------- 分钟级降水条（hero 内紧凑单条：8 柱 × 15 分钟 + 智能摘要） ---------- */
+  function renderMinutely() {
+    const el = $('mmWrap');
+    if (!el) return;
+    const w = state.data && state.data.weather;
+    const m = w && w.minutely_15;
+    if (!m || !m.time || !m.time.length || !m.precipitation) { el.innerHTML = ''; return; }
+    const now = new Date();
+    const nowStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(Math.floor(now.getMinutes() / 15) * 15)}`;
+    let idx = m.time.indexOf(nowStr);
+    if (idx < 0) idx = m.time.findIndex(t => t >= nowStr);
+    if (idx < 0) idx = 0;
+    const slots = [];
+    for (let i = idx; i < Math.min(idx + 8, m.time.length); i++) {
+      slots.push({ p: Number(m.precipitation[i]) || 0, code: Number(m.weather_code[i]) || 0 });
+    }
+    if (!slots.length) { el.innerHTML = ''; return; }
+    const maxP = Math.max(0.8, ...slots.map(s => s.p));
+    // 未来降水的措辞：看第一个降水槽的天气码（70-77/85/86 为雪）
+    const isSnowCode = c => (c >= 70 && c <= 77) || c === 85 || c === 86;
+    let summary;
+    const firstWet = slots.findIndex(s => s.p > 0.05);
+    if (firstWet === -1) {
+      summary = '未来 2 小时无雨';
+    } else {
+      const word = isSnowCode(slots[firstWet].code) ? '雪' : '雨';
+      if (firstWet === 0) {
+        // 正在下：找第一个停的槽位
+        const stop = slots.findIndex((s, i) => i > 0 && s.p <= 0.05);
+        summary = stop === -1 ? `${word}将持续 2 小时以上` : `${word}约 ${stop * 15} 分钟后停`;
+      } else {
+        summary = `约 ${firstWet * 15} 分钟后开始下${word}`;
+      }
+    }
+    const bars = slots.map((s, i) => {
+      const h = s.p <= 0.05 ? 2 : Math.max(4, Math.round((s.p / maxP) * 30));
+      return `<i class="mm-bar ${s.p > 0.05 ? (isSnowCode(s.code) ? 'snow' : 'rain') : 'dry'}" style="height:${h}px" title="${i * 15}分钟后 ${s.p.toFixed(1)}mm"></i>`;
+    }).join('');
+    el.innerHTML = `<div class="mm-head"><span class="mm-title">未来2小时降水</span><span class="mm-sum">${esc(summary)}</span></div>
+      <div class="mm-bars">${bars}</div>
+      <div class="mm-axis"><span>现在</span><span>1小时后</span><span>2小时后</span></div>`;
+  }
+
+  /* ---------- 朝晚霞概率（低云惩罚 / 中高云卷云加分，四档评价） ---------- */
+  function glowScore(low, mid, high) {
+    // 低云遮日：重罚；高云卷云 20-80%：霞光染色加分；全覆盖高云反而不佳
+    let s = 70;
+    if (low >= 80) s -= 55;
+    else if (low >= 50) s -= 32;
+    else if (low >= 20) s -= 12;
+    if (high >= 20 && high <= 80) s += 18;
+    else if (high > 80) s -= 8;
+    if (mid >= 20 && mid <= 60) s += 8;
+    else if (mid > 80) s -= 15;
+    return Math.max(0, Math.min(100, Math.round(s)));
+  }
+  function computeGlow(w, now) {
+    const out = {};
+    const d = w.daily, h = w.hourly;
+    if (!d || !h || !h.cloud_cover_low) return out;
+    const pick = (iso) => {
+      const t = new Date(iso).getTime();
+      if (!Number.isFinite(t)) return null;
+      // 取日出/日落时刻所在小时的云量
+      const hourStr = iso.slice(0, 13) + ':00';
+      let i = h.time.indexOf(hourStr);
+      if (i < 0) i = h.time.findIndex(x => x >= iso);
+      if (i < 0) return null;
+      const s = glowScore(h.cloud_cover_low[i] || 0, (h.cloud_cover_mid || [])[i] || 0, (h.cloud_cover_high || [])[i] || 0);
+      return { score: s, label: s >= 75 ? '绝佳' : s >= 55 ? '不错' : s >= 35 ? '一般' : '难见' };
+    };
+    // 取「下一次」日出/日落（还没到的那次）
+    for (let i = 0; i < Math.min(2, d.sunrise.length); i++) {
+      if (new Date(d.sunrise[i]).getTime() > now.getTime()) { out.dawn = pick(d.sunrise[i]); break; }
+    }
+    for (let i = 0; i < Math.min(2, d.sunset.length); i++) {
+      if (new Date(d.sunset[i]).getTime() > now.getTime()) { out.dusk = pick(d.sunset[i]); break; }
+    }
+    return out;
+  }
+
+  /* ---------- 托盘温度图标（canvas 画数字 → dataURL → 主进程 tray） ---------- */
+  let trayKey = '';
+  function trayDataURL(t, isDay) {
+    const cv = document.createElement('canvas');
+    cv.width = 64; cv.height = 64;
+    const g = cv.getContext('2d');
+    // 昼夜配色：圆角方块底 + 描边数字（任意任务栏主题都可读）
+    g.fillStyle = isDay ? '#f8f2df' : '#1d2740';
+    g.strokeStyle = isDay ? 'rgba(90,70,40,0.55)' : 'rgba(160,190,255,0.5)';
+    g.lineWidth = 3;
+    const r = 14;
+    g.beginPath();
+    g.moveTo(r + 2, 2); g.arcTo(62, 2, 62, 62, r); g.arcTo(62, 62, 2, 62, r);
+    g.arcTo(2, 62, 2, 2, r); g.arcTo(2, 2, 62, 2, r); g.closePath();
+    g.fill(); g.stroke();
+    g.font = '700 34px "Segoe UI", sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = isDay ? '#4a3a22' : '#dfe9ff';
+    const label = Math.abs(t) >= 100 ? String(t) : t + '°';
+    g.fillText(label, 32, 33);
+    return cv.toDataURL('image/png');
+  }
+  function updateTrayTemp() {
+    const w = state.data && state.data.weather;
+    if (!w || !state.settings || state.settings.trayTemp === false) return;
+    const t = Math.round(w.current.temperature_2m);
+    const isDay = computeIsDay(w, new Date());
+    const key = t + '|' + (isDay ? 'd' : 'n');
+    if (key === trayKey) return; // 温度整数与昼夜都没变 → 不重绘不发 IPC
+    trayKey = key;
+    try { sky.trayTemp(trayDataURL(t, isDay)); } catch (e) { }
+  }
+
+  /* ---------- 天气早晚报（每天 8:00 / 20:00 系统通知，localStorage 按日期去重） ---------- */
+  function briefText(slot) {
+    const w = state.data && state.data.weather;
+    if (!w) return null;
+    const d = w.daily;
+    const i = slot === 'am' ? 0 : 1; // 早报讲今天，晚报讲明天
+    const info = Weather.summarizeDaily(w, i);
+    const pop = Math.max(0, Math.round((d.precipitation_probability_max || [0])[i] || 0));
+    const title = (slot === 'am' ? '早安 · ' : '晚安 · ') + (state.loc.name || '天气');
+    const body = `${i === 0 ? '今天' : '明天'}${info.text}，${Math.round(d.temperature_2m_min[i])}~${Math.round(d.temperature_2m_max[i])}°` +
+      (pop >= 30 ? `，降水概率 ${pop}%记得带伞` : '');
+    return { title, body };
+  }
+  function checkBrief() {
+    if (!state.settings || state.settings.brief === false) return;
+    const now = new Date();
+    const h = now.getHours();
+    const slot = (h === 8 || h === 20) ? (h === 8 ? 'am' : 'pm') : null;
+    if (!slot) return;
+    const key = `brief_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${slot}`;
+    try { if (localStorage.getItem(key)) return; } catch (e) { }
+    const b = briefText(slot);
+    if (!b) return; // 数据还没来不标记，下次 tick 重试
+    try { localStorage.setItem(key, '1'); } catch (e) { }
+    if (sky.notify) sky.notify(b.title, b.body);
+  }
+
+  // 只读自检钩子（--shot 探针用，不暴露写能力）
+  window.__selftest = { briefText, trayDataURL, computeGlow: () => computeGlow(state.data && state.data.weather, new Date()) };
 
   function renderDaily() {
     const w = state.data.weather;
@@ -301,8 +498,9 @@
 
   function renderAll() {
     try {
-      renderHero(); renderHourly(); renderDaily(); renderAQI(); renderLife(); renderPill();
+      renderHero(); renderMinutely(); renderHourly(); renderDaily(); renderAQI(); renderLife(); renderPill();
       updateSky();
+      updateTrayTemp();
       if (window.Globe) Globe.update(state.loc, state.data && state.data.weather ? state.data.weather.daily : null);
     } catch (e) { console.error('render error', e); }
   }
@@ -418,9 +616,12 @@
   }
 
   /* ================= 数据加载 ================= */
+  let loadSeq = 0;   // 请求序号：丢弃过期响应（快速切换地点时旧地点数据不得覆盖新地点）
   async function loadWeather() {
     if (!state.loc) return;
+    const seq = ++loadSeq;
     const res = await sky.fetchWeather(state.loc.lat, state.loc.lon);
+    if (seq !== loadSeq) return; // 已有更新的请求在途/完成，本次响应过期作废
     if (res && res.error) {
       $('condText').textContent = '网络异常';
       $('hourlySub').textContent = '点击右上角刷新重试';
@@ -628,6 +829,13 @@
       state.settings = await sky.updateSettings({ edgeDock: e.target.checked });
       if (!e.target.checked) applyDockState({ docked: false, expanded: false });
     });
+    $('chkTrayTemp').addEventListener('change', async e => {
+      state.settings = await sky.updateSettings({ trayTemp: e.target.checked });
+      if (e.target.checked) { trayKey = ''; updateTrayTemp(); } // 重新开启 → 立即推一次图标
+    });
+    $('chkBrief').addEventListener('change', async e => {
+      state.settings = await sky.updateSettings({ brief: e.target.checked });
+    });
 
     // 软件更新
     $('btnCheckUpdate').addEventListener('click', () => {
@@ -699,9 +907,22 @@
 
   function startRefreshTimer() {
     clearInterval(state.refreshTimer);
-    const mins = Number(state.settings.refreshMinutes) || 10;
+    state.refreshTimer = null;
+    if (document.hidden) return; // 隐藏到托盘时不空转网络请求（显示恢复时再补）
+    const mins = Number(state.settings && state.settings.refreshMinutes) || 10;
     state.refreshTimer = setInterval(loadWeather, mins * 60 * 1000);
   }
+  // 隐藏（收起到托盘）→ 暂停定时刷新；重新显示 → 恢复定时 + 数据过期立即补一刷
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearInterval(state.refreshTimer);
+      state.refreshTimer = null;
+      return;
+    }
+    startRefreshTimer();
+    const mins = Number(state.settings && state.settings.refreshMinutes) || 10;
+    if (state.loc && (!state.fetchedAt || Date.now() - state.fetchedAt.getTime() > mins * 60 * 1000)) loadWeather();
+  });
 
   /* ================= iOS 式惯性滚动 =================
      原生 Windows 滚轮是一格一格跳的，观感生硬；
@@ -841,6 +1062,8 @@
     $('chkTop').checked = !!state.settings.alwaysOnTop;
     $('chkAuto').checked = !!state.settings.autoLaunch;
     $('chkEdgeDock').checked = state.settings.edgeDock !== false;
+    $('chkTrayTemp').checked = state.settings.trayTemp !== false;
+    $('chkBrief').checked = state.settings.brief !== false;
     $('updateUrlInput').value = state.settings.updateUrl || '';
 
     // 吸顶温度小窗：状态同步 + 悬停展开/收起

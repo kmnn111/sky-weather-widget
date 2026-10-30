@@ -1,10 +1,13 @@
 # 依赖与构建产物
 node_modules/
 dist/
+dist-gh/
+debug/
 
 # 调试 / 自检产物
 g-*.png
 u-*.png
+shot-*.png
 zoom-*.png
 test-icons.png
 test-icons.html

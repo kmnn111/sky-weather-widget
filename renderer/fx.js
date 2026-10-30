@@ -33,10 +33,15 @@ const FX = (() => {
   }
 
   let skyToggle = false;
+  let lastSkyKey = '';   // 天空重绘指纹：时段/天气/昼夜都没变就整轮跳过（省背景重设 + 全窗层重绘）
   function paintSky(date, group) {
     const h = date.getHours() + date.getMinutes() / 60;
     // night 由 setMode(is_day) 统一决定（API 权威），这里不再按钟点猜测
-    const p = PHASES[phaseOf(h)];
+    const phase = phaseOf(h);
+    const skyKey = phase + '|' + (group || 'clear') + '|' + night;
+    if (skyKey === lastSkyKey) return;
+    lastSkyKey = skyKey;
+    const p = PHASES[phase];
     const mood = MOOD[group] && group !== 'clear' ? MOOD[group] : null;
     const grad = `linear-gradient(180deg, ${p.join(', ')})`;
     const overlay = mood ? `linear-gradient(180deg, ${mood.join(', ')})` : 'none';
@@ -246,14 +251,20 @@ const FX = (() => {
     pump();
   }
 
+  let spawned = false;
   function setMode(group, isDay, date) {
     const map = {
       clear: 'clear', cloudy: 'cloudy', fog: 'fog',
       rain: 'rain', snow: 'snow', thunder: 'thunder'
     };
-    night = !isDay;
-    mode = map[group] || 'clear';
-    spawn();
+    const newNight = !isDay;
+    const newMode = map[group] || 'clear';
+    // 粒子只在天气/昼夜真正变化时重建。旧实现每 60s 无条件 spawn()，
+    // 雨/雪粒子会整批瞬移到新随机位置（肉眼可见的每分钟"跳一下"），也白造内存垃圾
+    const changed = newMode !== mode || newNight !== night || !spawned;
+    night = newNight;
+    mode = newMode;
+    if (changed) { spawn(); spawned = true; }
     if (date) paintSky(date, group === 'clear' ? 'clear' : group);
   }
 

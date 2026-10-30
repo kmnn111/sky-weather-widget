@@ -3,7 +3,7 @@
  * 云上晴雨 - 宫崎骏风格 Windows 桌面天气插件
  * Electron 主进程：无边框透明窗体 / 置顶 / 托盘 / 位置记忆 / 数据接口代理
  */
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, desktopCapturer, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -31,7 +31,9 @@ let settings = {
   winSize: null,
   edgeDock: true,       // 顶部吸附：拖到屏幕顶端自动收起为温度小窗
   docked: false,        // 当前是否处于吸顶收起状态
-  dockX: null           // 吸顶小窗的 x 位置记忆
+  dockX: null,          // 吸顶小窗的 x 位置记忆
+  trayTemp: true,       // 托盘温度图标：托盘图标实时显示当前温度
+  brief: true           // 天气早晚报：8:00 / 20:00 系统通知播报当天概况
 };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
@@ -53,21 +55,23 @@ function persist(patch = {}) {
    每次启动用 display 地址链重推导一遍（幂等，只在有变化时写盘） */
 function migrateLocations() {
   if (!Array.isArray(settings.locations) || !settings.locations.length) return;
-  let changed = false;
-  const next = settings.locations.map(l => {
-    if (!l || !l.display) return l;
-    const fixed = parseNominatim({ display_name: l.display.split(' · ').join(', '), name: l.name, address: {} });
-    const merged = Object.assign({}, l, {
-      name: fixed.name || l.name,
-      parent: fixed.parent,
-      admin1: fixed.admin1,
-      detail: fixed.detail
+  try {
+    let changed = false;
+    const next = settings.locations.map(l => {
+      if (!l || !l.display) return l;
+      const fixed = parseNominatim({ display_name: l.display.split(' · ').join(', '), name: l.name, address: {} });
+      const merged = Object.assign({}, l, {
+        name: fixed.name || l.name,
+        parent: fixed.parent,
+        admin1: fixed.admin1,
+        detail: fixed.detail
+      });
+      if (merged.name !== l.name || merged.parent !== (l.parent || '') ||
+          merged.admin1 !== (l.admin1 || '') || merged.detail !== (l.detail || '')) changed = true;
+      return merged;
     });
-    if (merged.name !== l.name || merged.parent !== (l.parent || '') ||
-        merged.admin1 !== (l.admin1 || '') || merged.detail !== (l.detail || '')) changed = true;
-    return merged;
-  });
-  if (changed) { settings.locations = next; persist(); }
+    if (changed) { settings.locations = next; persist(); }
+  } catch (e) { /* 坏数据只跳过迁移，绝不拖垮启动 */ }
 }
 
 /* ---------------- 地理解析：见 geo.js（parseNominatim）---------------- */
@@ -78,7 +82,9 @@ async function fetchWeather(lat, lon) {
     `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,weather_code,` +
     `cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
     `&hourly=temperature_2m,weather_code,precipitation_probability,precipitation,is_day,uv_index,` +
-    `wind_speed_10m,wind_direction_10m,relative_humidity_2m,visibility,apparent_temperature` +
+    `wind_speed_10m,wind_direction_10m,relative_humidity_2m,visibility,apparent_temperature,` +
+    `cloud_cover_low,cloud_cover_mid,cloud_cover_high` +
+    `&minutely_15=precipitation,weather_code` +
     `&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,` +
     `sunrise,sunset,uv_index_max,precipitation_sum,precipitation_probability_max,wind_speed_10m_max` +
     `&timezone=auto&forecast_days=7`;
@@ -145,6 +151,7 @@ function ensureHoverPoll() {
   if (hoverPoll) return;
   hoverPoll = setInterval(() => {
     if (!win || win.isDestroyed() || !settings.docked || settings.edgeDock === false) return;
+    if (!win.isVisible()) return; // 隐藏到托盘时不空转光标轮询
     const b = win.getBounds();
     const p = screen.getCursorScreenPoint();
     // 收起态只认小窗矩形；展开态认整个窗口
@@ -221,25 +228,79 @@ function checkSnap() {
 /* ---------------- IPC ---------------- */
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings);
+  // 设置写入白名单：渲染层只允许改这几个键（防任意键注入/原型污染/updateUrl 被劫持到恶意更新源）
+  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief']);
   ipcMain.handle('settings:update', (_e, patch) => {
-    persist(patch);
+    const safe = {};
+    if (patch && typeof patch === 'object') {
+      for (const k of Object.keys(patch)) {
+        if (!SETTINGS_KEYS.has(k)) continue;
+        const v = patch[k];
+        if (k === 'updateUrl') {
+          const u = String(v == null ? '' : v).trim().slice(0, 500);
+          if (u && !/^https?:\/\//i.test(u)) continue;
+          safe.updateUrl = u;
+        } else if (k === 'refreshMinutes') {
+          const n = Number(v);
+          if (Number.isFinite(n) && n >= 1 && n <= 1440) safe.refreshMinutes = n;
+        } else if (k === 'locations') {
+          if (Array.isArray(v)) safe.locations = v;
+        } else if (k === 'activeId') {
+          safe.activeId = v == null ? null : String(v).slice(0, 80);
+        } else if (typeof v === 'boolean' || k === 'unit' || k === 'autoLocate') {
+          safe[k] = v;
+        }
+      }
+    }
+    persist(safe);
     if (win) {
-      if (typeof patch.alwaysOnTop === 'boolean') win.setAlwaysOnTop(patch.alwaysOnTop, 'floating');
+      if (typeof safe.alwaysOnTop === 'boolean') win.setAlwaysOnTop(safe.alwaysOnTop, 'floating');
       applyAutoLaunch(settings.autoLaunch);
     }
-    if (patch.edgeDock === false && settings.docked) undockWindow(); // 关掉吸附 → 恢复完整插件
+    if (safe.edgeDock === false && settings.docked) undockWindow(); // 关掉吸附 → 恢复完整插件
+    if (Object.prototype.hasOwnProperty.call(safe, 'trayTemp') && tray) {
+      if (!safe.trayTemp) {
+        try { tray.setImage(nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'))); } catch (e) { }
+      }
+      // 开启时等渲染层下一次推温度图标（renderAll 会主动推）
+    }
     return settings;
+  });
+
+  // 托盘温度图标：渲染层 canvas 画温度数字 → dataURL → nativeImage（仅接受图片 dataURL，超长拒绝）
+  ipcMain.on('tray:temp', (_e, dataURL) => {
+    if (!tray || settings.trayTemp === false) return;
+    try {
+      const s = String(dataURL || '');
+      if (s.slice(0, 11) !== 'data:image/') return;
+      if (s.length > 200000) return;
+      const img = nativeImage.createFromDataURL(s);
+      if (!img.isEmpty()) tray.setImage(img);
+    } catch (e) { }
+  });
+
+  // 天气早晚报：渲染层组装文案（本地去重），主进程发系统通知
+  ipcMain.on('notify', (_e, p) => {
+    if (!p || typeof p !== 'object') return;
+    const title = String(p.title == null ? '' : p.title).slice(0, 60);
+    const body = String(p.body == null ? '' : p.body).slice(0, 300);
+    if (title) pushNotify(title, body);
   });
 
   // 吸顶小窗悬停：进入 → 展开完整插件；离开 → 延时收起
   ipcMain.on('dock:hover', (_e, inside) => handleDockHover(!!inside));
 
-  ipcMain.handle('weather:get', (_e, p) => fetchWeather(p.lat, p.lon).catch(err => ({ error: String(err.message || err) })));
+  ipcMain.handle('weather:get', (_e, p) => {
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve({ error: '坐标无效' });
+    return fetchWeather(p.lat, p.lon).catch(err => ({ error: String(err.message || err) }));
+  });
 
   ipcMain.handle('geo:search', async (_e, q) => {
     // 双源兜底：Nominatim 故障/无结果 → Open-Meteo 地理编码；网络层故障 got() 自动重试
+    const kw = String(q == null ? '' : q).trim().slice(0, 80);
+    if (!kw) return [];
     try {
-      return await searchPlaces(q);
+      return await searchPlaces(kw);
     } catch (err) { return { error: friendlyNetError(err) }; }
   });
 
@@ -320,6 +381,7 @@ function registerIpc() {
   let dragBase = null;
   ipcMain.on('win:drag', (_e, sx, sy) => {
     if (!win || win.isDestroyed()) return;
+    if (!Number.isFinite(sx) || !Number.isFinite(sy)) return; // NaN/Infinity 不进 setPosition
     if (!dragBase) {
       const p = win.getPosition();
       dragBase = { sx, sy, wx: p[0], wy: p[1] };   // 首帧只建基准，不动
@@ -383,6 +445,10 @@ function createWindow() {
       spellcheck: false
     }
   });
+  // 导航防护（Electron 安全基线）：单页本地应用不需要任何导航/新窗口，
+  // 渲染层即使被注入也不许外跳或开窗
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.show());
@@ -397,9 +463,24 @@ function createWindow() {
   // 启动自愈：窗口贴在屏幕顶端（比如上次拖到顶没吸附成功）→ 自动收起为温度小窗
   if (!SHOT_MODE && !startDocked) setTimeout(checkSnap, 1200);
 
-  // 渲染进程报错输出到控制台，便于排查
-  win.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2 || SHOT_MODE) console.log('[renderer]', message);
+  // 渲染进程报错输出到控制台，便于排查。
+  // Electron 33 起 console-message 改为事件对象携带 level/message（旧位置参数已弃用），
+  // 双签名兼容：两种形态都取到等级与文本，warning/error 恒不丢
+  win.webContents.on('console-message', (e, level, message) => {
+    const lv = level != null ? level : (e && e.level);
+    const msg = message != null ? message : String((e && e.message) || '');
+    const sev = typeof lv === 'number' ? lv
+      : ({ verbose: 0, info: 1, warning: 2, error: 3 })[String(lv)] != null ? ({ verbose: 0, info: 1, warning: 2, error: 3 })[String(lv)] : 0;
+    if (sev >= 2 || SHOT_MODE) console.log('[renderer]', msg);
+  });
+
+  // 渲染进程崩溃自愈：白屏挂死比崩溃更糟，记录后原地 reload（限次防崩溃循环）
+  let goneCount = 0;
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (!details || details.reason === 'clean-exit') return;
+    console.error('[main] renderer gone:', details.reason);
+    if (goneCount++ >= 2) return;
+    try { win.webContents.reload(); } catch (err) { }
   });
 
   // --shot：启动后自动截图（开发调试用，输出 shot-1/2/3.png）
@@ -460,6 +541,8 @@ function createWindow() {
         console.log('[ime-test] real-Enter fired search:', imeRes.started, imeRes.started ? 'PASS' : 'FAIL');
         // shot-6/7/8：真实桌面视角验证吸顶小窗（收起 / 展开 / 再收起）
         const shootDesktop = async (name) => {
+          // desktopCapturer 只在截图自检里用：懒加载，正式运行不占屏幕采集能力面
+          const { desktopCapturer } = require('electron');
           const srcs = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1600, height: 900 } });
           const out = path.join(app.isPackaged ? process.cwd() : __dirname, name);
           fs.writeFileSync(out, srcs[0].thumbnail.toPNG());
@@ -528,6 +611,46 @@ function createWindow() {
         const b1 = win.getBounds();
         const healOk = b1.width === baseSize.w && b1.height === baseSize.h;
         console.log('[size-test] rogue-resize self-heal', JSON.stringify({ base: baseSize, after: { w: b1.width, h: b1.height } }), healOk ? 'PASS' : 'FAIL');
+        // ---- v1.0.17 自检：settings:update 白名单（合法键放行 / 注入键与非法 updateUrl 拒收） ----
+        const wl = JSON.parse(await win.webContents.executeJavaScript(`(async () => {
+          const r1 = await sky.updateSettings({ refreshMinutes: 10, hacked: 'x', updateUrl: 'javascript:alert(1)' });
+          return JSON.stringify({
+            hackedGone: !('hacked' in r1),
+            badUrlRejected: r1.updateUrl !== 'javascript:alert(1)',
+            refreshOk: r1.refreshMinutes === 10
+          });
+        })()`));
+        const wlOk = wl.hackedGone && wl.badUrlRejected && wl.refreshOk;
+        console.log('[settings-test] whitelist', JSON.stringify(wl), wlOk ? 'PASS' : 'FAIL');
+        // ---- v1.0.17 新功能自检：分钟级降水 / 24h 趋势 / 朝晚霞 / 托盘温度 / 早晚报 ----
+        const nf = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const mm = document.getElementById('mmWrap');
+          const bars = mm ? mm.querySelectorAll('.mm-bar') : [];
+          const sum = mm ? (mm.querySelector('.mm-sum') || {}).textContent || '' : '';
+          const trend = document.getElementById('trendWrap');
+          const path = trend ? trend.querySelector('path.tr-line') : null;
+          const chips = (document.getElementById('statRow') || {}).textContent || '';
+          const st = window.__selftest || {};
+          const glow = st.computeGlow ? st.computeGlow() : {};
+          const tray = st.trayDataURL ? st.trayDataURL(23, true) : '';
+          const brief = st.briefText ? st.briefText('am') : null;
+          return JSON.stringify({
+            mmBars: bars.length, mmSum: sum,
+            trendLen: path ? (path.getAttribute('d') || '').length : 0,
+            trendPops: trend ? trend.querySelectorAll('rect.tr-pop').length : 0,
+            glowDawn: glow.dawn ? glow.dawn.label : '', glowDusk: glow.dusk ? glow.dusk.label : '',
+            chipsHasGlow: chips.indexOf('朝霞') !== -1 && chips.indexOf('晚霞') !== -1,
+            trayOk: tray.indexOf('data:image/png') === 0 && tray.length > 500,
+            briefOk: !!(brief && brief.title && brief.body && brief.body.indexOf('°') !== -1)
+          });
+        })()`));
+        const nfOk = nf.mmBars === 8 && !!nf.mmSum && nf.trendLen > 30 && nf.chipsHasGlow && nf.trayOk && nf.briefOk;
+        console.log('[mm-test] 8bars+summary', nf.mmBars, JSON.stringify(nf.mmSum), (nf.mmBars === 8 && !!nf.mmSum) ? 'PASS' : 'FAIL');
+        console.log('[chart-test] trend path/pops', nf.trendLen, nf.trendPops, (nf.trendLen > 30 && nf.trendPops > 0) ? 'PASS' : 'FAIL');
+        console.log('[glow-test] dawn/dusk', JSON.stringify(nf.glowDawn), JSON.stringify(nf.glowDusk), nf.chipsHasGlow ? 'PASS' : 'FAIL');
+        console.log('[tray-test] dataURL', nf.trayOk ? 'PASS' : 'FAIL');
+        console.log('[brief-test] text', nf.briefOk ? 'PASS' : 'FAIL');
+        console.log('[newfeat-test] DONE', nfOk ? 'PASS' : 'FAIL');
         // 截图调试不留存档状态
         settings.docked = false; persist({ docked: false });
       } catch (e) { console.error('[shot] failed', e); }
