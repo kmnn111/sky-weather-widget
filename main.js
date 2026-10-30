@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 
 // --shot / --shot-globe 截图调试用独立 userData：不与正在运行的正式实例抢单实例锁
-const SHOT_MODE = process.argv.includes('--shot') || process.argv.includes('--shot-globe') || process.argv.includes('--shot-update');
+const SHOT_MODE = process.argv.includes('--shot') || process.argv.includes('--shot-globe') || process.argv.includes('--shot-update') || process.argv.includes('--shot-dock');
 if (SHOT_MODE) {
   try { app.setPath('userData', app.getPath('userData') + '-shot'); } catch (e) { }
 }
@@ -202,7 +202,15 @@ function collapseDock() {
   hoverArmed = false;
   sendDockState();         // CSS 先淡出 + 天空层形变收进小窗
   setTimeout(() => {       // 淡出/形变（~240ms）完成后再裁剪形状，避免内容突然消失
-    if (win && !win.isDestroyed() && settings.docked && !dockExpanded) setShapePill();
+    if (!win || win.isDestroyed() || !settings.docked || dockExpanded) return;
+    // 小窗按大窗平移后的位置对位：x 跟随大窗中心、y 贴回顶边（吸顶归位），并固化位置记忆
+    const b = win.getBounds();
+    const wa = screen.getDisplayMatching(b).workArea;
+    const px = clamp(Math.round(b.x + baseSize.w / 2 - PILL_W / 2), wa.x, wa.x + wa.width - PILL_W);
+    const nx = px - Math.round((baseSize.w - PILL_W) / 2);
+    if (nx !== b.x || b.y !== wa.y) setBoundsSafe({ x: nx, y: wa.y, width: baseSize.w, height: baseSize.h });
+    if (px !== settings.dockX) { settings.dockX = px; persist({ dockX: px }); }
+    setShapePill();
   }, 260);
   ensureHoverPoll();
 }
@@ -922,6 +930,61 @@ function createWindow() {
     }, 8000);
   }
 
+  // --shot-dock：吸顶小窗位置链路自检（真实拖拽链路平移大窗 → 收起小窗跟随 / 位置记忆固化 / 拖拽基准不回跳）
+  if (process.argv.includes('--shot-dock')) {
+    setTimeout(async () => {
+      const passes = [];
+      const check = (name, ok, detail) => { passes.push(!!ok); console.log('[dock-test]', name, detail, ok ? 'PASS' : 'FAIL'); };
+      const saved = { winPos: settings.winPos ? JSON.parse(JSON.stringify(settings.winPos)) : null, dockX: settings.dockX, docked: settings.docked };
+      try {
+        const pillXOf = (b) => b.x + Math.round((baseSize.w - PILL_W) / 2); // 小窗屏幕 x（形状相对窗口，随窗口平移）
+        // 0. 退出吸顶 → 定位到已知坐标 → 拖到顶部吸附（真实业务入口 dockWindow）
+        undockWindow();
+        await new Promise(r => setTimeout(r, 400));
+        setBoundsSafe({ x: 240, y: 320, width: baseSize.w, height: baseSize.h });
+        await new Promise(r => setTimeout(r, 600));
+        dockWindow();
+        await new Promise(r => setTimeout(r, 600));
+        const b1 = win.getBounds();
+        const pill1 = pillXOf(b1);
+        check('snap-align', pill1 === 240 + Math.round((baseSize.w - PILL_W) / 2) && b1.y === screen.getDisplayMatching(b1).workArea.y, `pill1=${pill1}`);
+        // 1. 展开 + 真实拖拽链路（renderer winDrag → IPC → setPosition）把大窗右移 432px
+        expandDock();
+        await new Promise(r => setTimeout(r, 400));
+        await win.webContents.executeJavaScript(`sky.winDrag(100, 500); sky.winDrag(532, 500); sky.winDragEnd();`);
+        await new Promise(r => setTimeout(r, 1000)); // 过吸附防抖(350ms)+程序改位抑制窗(600ms)
+        const b2 = win.getBounds();
+        check('pan-moved', b2.x - b1.x === 432, `dx=${b2.x - b1.x}`);
+        // 2. 收起 → 小窗必须出现在大窗平移后的位置（x 跟随大窗中心）
+        collapseDock();
+        await new Promise(r => setTimeout(r, 900));
+        const b3 = win.getBounds();
+        const pill3 = pillXOf(b3);
+        check('collapse-follow', pill3 - pill1 === 432, `pill1=${pill1} pill3=${pill3}`);
+        // 3. 位置记忆固化：重启 startDocked 按 dockX 还原，必须等于当前小窗 x（否则重启后小窗回旧位）
+        check('dockX-fresh', settings.dockX === pill3, `dockX=${settings.dockX} pill3=${pill3}`);
+        // 4. 拖拽基准重置：旧拖拽没发 drag-end 就开新拖拽，窗口必须按新基准走、不得按旧基准回跳
+        await win.webContents.executeJavaScript(`sky.winDrag(100, 500); sky.winDrag(300, 500);`); // 旧拖拽（无结束）+200
+        await new Promise(r => setTimeout(r, 800));
+        const bx = win.getBounds().x;
+        await win.webContents.executeJavaScript(`(() => {
+          const el = document.querySelector('.pill-grip') || document.querySelector('.hero-top');
+          const opt = (x) => ({ bubbles: true, cancelable: true, button: 0, screenX: x, screenY: 500 });
+          el.dispatchEvent(new MouseEvent('mousedown', opt(600)));
+          window.dispatchEvent(new MouseEvent('mousemove', opt(900)));
+          window.dispatchEvent(new MouseEvent('mouseup', opt(900)));
+        })()`);
+        await new Promise(r => setTimeout(r, 800));
+        const bx2 = win.getBounds().x;
+        check('drag-base-reset', bx2 - bx === 300, `dx=${bx2 - bx}`);
+      } catch (e) { console.error('[dock-test] failed', e); check('exception', false, String((e && e.message) || e)); }
+      // 还原设置（不污染用户的位置记忆）
+      try { settings.docked = saved.docked; settings.dockX = saved.dockX; settings.winPos = saved.winPos; persist({ docked: saved.docked, dockX: saved.dockX, winPos: saved.winPos }); } catch (e) { }
+      console.log('[dock-test] DONE', (passes.length === 5 && passes.every(Boolean)) ? 'PASS' : 'FAIL');
+      app.exit(0);
+    }, 1500);
+  }
+
   let saveTimer = null;
   const saveGeom = () => {
     clearTimeout(saveTimer);
@@ -935,7 +998,14 @@ function createWindow() {
         setBoundsSafe({ x: b.x, y: b.y, width: baseSize.w, height: baseSize.h });
         return;
       }
-      if (settings.docked) return; // 吸顶小窗不覆盖位置记忆
+      if (settings.docked) {
+        // 吸顶态不覆盖 winPos，但小窗位置记忆必须跟上大窗平移（展开态拖动/程序移位），
+        // 否则重启/开机自启后小窗按旧 dockX 还原 = 「小窗位置没变」
+        const wa = screen.getDisplayMatching(b).workArea;
+        const px = clamp(Math.round(b.x + baseSize.w / 2 - PILL_W / 2), wa.x, wa.x + wa.width - PILL_W);
+        if (px !== settings.dockX) { settings.dockX = px; persist({ dockX: px }); }
+        return;
+      }
       persist({ winPos: { x: b.x, y: b.y }, winSize: { w: baseSize.w, h: baseSize.h } });
     }, 400);
   };
@@ -1040,6 +1110,16 @@ function setupAutoUpdate() {
     autoUpdater.autoInstallOnAppQuit = false; // 安装需用户确认重启
     autoUpdater.on('checking-for-update', () => otaLog('checking'));
     autoUpdater.on('update-available', (info) => {
+      // 同版本热修重推防回环：重推占位号（如 1.0.17 热修用 1.0.18 触发）指向的仍是本版本
+      // 同名安装包 = 已装即已拥有，按「已是最新」收场，不弹横幅不循环下载。
+      // 真实新版本安装包名随版本递增（Setup-1.0.19.exe…），不会被此规则拦下。
+      const f = String((info && info.files && info.files[0] && (info.files[0].url || info.files[0].path)) || '');
+      const own = 'Setup-' + app.getVersion() + '.exe';
+      if (f.endsWith(own)) {
+        otaLog('skip same-version repush offer', f);
+        sendUpdateState({ type: 'up-to-date', current: app.getVersion() });
+        return;
+      }
       otaLog('available', info.version);
       sendUpdateState({ type: 'available', version: info.version, current: app.getVersion() });
     });

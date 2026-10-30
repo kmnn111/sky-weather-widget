@@ -1041,6 +1041,7 @@
         if (e.button !== 0) return;
         dragging = true;
         e.preventDefault();               // 避免拖动时选中文字
+        sky.winDragEnd();                 // 先作废旧基准：上次拖拽若丢了 up，按旧基准续算会整窗回跳
         sky.winDrag(e.screenX, e.screenY); // 建立拖拽基准点
       });
     });
