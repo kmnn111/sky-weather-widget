@@ -76,13 +76,13 @@
     </header>
 
     <!-- 昼夜地球：真实大陆轮廓随恒星时旋转，晨昏线分隔昼夜 -->
-    <section class="card">
+    <section class="card" id="modGlobe">
       <div class="card-title">昼夜地球 <em class="sub" id="globeSub"></em><button class="pill-btn sm" id="globeMode">真实自转</button></div>
       <div id="globeMount"></div>
     </section>
 
     <!-- 逐 3 小时 -->
-    <section class="card">
+    <section class="card" id="modHourly">
       <div class="card-title">逐时预报 <em class="sub" id="hourlySub"></em></div>
       <!-- 24h 温度/降水趋势曲线：整合进逐时预报卡（同一份数据的图形化概览） -->
       <div class="trend-wrap" id="trendWrap"></div>
@@ -90,14 +90,14 @@
     </section>
 
     <!-- 7 天预报 -->
-    <section class="card">
+    <section class="card" id="modDaily">
       <div class="card-title">七日预报</div>
       <div class="daily-list" id="dailyList"></div>
     </section>
 
     <!-- 空气质量 + 生活指数 -->
     <section class="duo">
-      <div class="card aqi-card">
+      <div class="card aqi-card" id="modAqi">
         <div class="card-title">空气质量</div>
         <div class="aqi-main">
           <div class="aqi-num" id="aqiNum">--</div>
@@ -110,14 +110,14 @@
         <div class="aqi-grid" id="aqiGrid"></div>
       </div>
 
-      <div class="card life-card">
+      <div class="card life-card" id="modLife">
         <div class="card-title">生活指南</div>
         <div class="life-list" id="lifeList"></div>
       </div>
     </section>
 
     <!-- 万年历 -->
-    <section class="card almanac">
+    <section class="card almanac" id="modAlmanac">
       <div class="alm-head">
         <div class="card-title">万年历 <em class="sub" id="almSub">择吉 · 宜忌</em></div>
         <div class="alm-nav">
@@ -193,6 +193,14 @@
       <h4>提醒与托盘</h4>
       <label class="check"><input type="checkbox" id="chkTrayTemp" /> 托盘图标显示实时温度</label>
       <label class="check"><input type="checkbox" id="chkBrief" /> 天气早晚报（每天 8:00 / 20:00 通知播报）</label>
+
+      <h4>显示模块</h4>
+      <label class="check"><input type="checkbox" id="chkModGlobe" /> 昼夜地球</label>
+      <label class="check"><input type="checkbox" id="chkModHourly" /> 逐时预报（含趋势曲线）</label>
+      <label class="check"><input type="checkbox" id="chkModDaily" /> 七日预报</label>
+      <label class="check"><input type="checkbox" id="chkModAqi" /> 空气质量</label>
+      <label class="check"><input type="checkbox" id="chkModLife" /> 生活指南</label>
+      <label class="check"><input type="checkbox" id="chkModAlmanac" /> 万年历</label>
 
       <button class="wide-btn danger" id="btnQuit">退出程序</button>
 

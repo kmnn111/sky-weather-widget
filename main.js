@@ -237,7 +237,8 @@ function checkSnap() {
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings);
   // 设置写入白名单：渲染层只允许改这几个键（防任意键注入/原型污染/updateUrl 被劫持到恶意更新源）
-  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief']);
+  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules']);
+  const MODULE_KEYS = new Set(['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac']);
   ipcMain.handle('settings:update', (_e, patch) => {
     const safe = {};
     if (patch && typeof patch === 'object') {
@@ -255,6 +256,15 @@ function registerIpc() {
           if (Array.isArray(v)) safe.locations = v;
         } else if (k === 'activeId') {
           safe.activeId = v == null ? null : String(v).slice(0, 80);
+        } else if (k === 'modules') {
+          // 显式白名单：对象值不能走下面的 typeof v === 'boolean' 分支（曾静默丢弃导致开关不生效）
+          if (v && typeof v === 'object' && !Array.isArray(v)) {
+            const m = Object.assign({}, settings.modules);
+            for (const mk of Object.keys(v)) {
+              if (MODULE_KEYS.has(mk) && typeof v[mk] === 'boolean') m[mk] = v[mk];
+            }
+            safe.modules = m;
+          }
         } else if (typeof v === 'boolean' || k === 'unit' || k === 'autoLocate') {
           safe[k] = v;
         }
@@ -659,6 +669,32 @@ function createWindow() {
         console.log('[tray-test] dataURL', nf.trayOk ? 'PASS' : 'FAIL');
         console.log('[brief-test] text', nf.briefOk ? 'PASS' : 'FAIL');
         console.log('[newfeat-test] DONE', nfOk ? 'PASS' : 'FAIL');
+        // ---- 论坛反馈修复自检：趋势横轴时间刻度 / 模块开关链路 ----
+        const tt = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const t = document.getElementById('trendWrap');
+          return JSON.stringify({
+            ticks: t ? t.querySelectorAll('text.tr-tick').length : 0,
+            grids: t ? t.querySelectorAll('line.tr-grid').length : 0
+          });
+        })()`));
+        console.log('[trend-test] time ticks', JSON.stringify(tt), (tt.ticks >= 3 && tt.grids >= 2) ? 'PASS' : 'FAIL');
+        // 模块开关：真实走设置面板勾选链路（change → updateSettings → applyModules），测完还原
+        await win.webContents.executeJavaScript(`document.getElementById("btnSettings").click()`);
+        await new Promise(r => setTimeout(r, 500));
+        await win.webContents.executeJavaScript(`(() => {
+          const c = document.getElementById('chkModAlmanac');
+          c.checked = false; c.dispatchEvent(new Event('change'));
+        })()`);
+        await new Promise(r => setTimeout(r, 600));
+        const modOff = await win.webContents.executeJavaScript(`getComputedStyle(document.getElementById('modAlmanac')).display === 'none'`);
+        await win.webContents.executeJavaScript(`(() => {
+          const c = document.getElementById('chkModAlmanac');
+          c.checked = true; c.dispatchEvent(new Event('change'));
+        })()`);
+        await new Promise(r => setTimeout(r, 600));
+        const modOn = await win.webContents.executeJavaScript(`getComputedStyle(document.getElementById('modAlmanac')).display !== 'none'`);
+        await win.webContents.executeJavaScript(`document.getElementById("closeSettings").click()`);
+        console.log('[mod-test] toggle', JSON.stringify({ modOff, modOn }), (modOff && modOn) ? 'PASS' : 'FAIL');
         // 截图调试不留存档状态
         settings.docked = false; persist({ docked: false });
       } catch (e) { console.error('[shot] failed', e); }
@@ -924,7 +960,29 @@ function createWindow() {
         })()`));
         const duOk = !du.hidden && du.text === '立即重启';
         console.log('[ota-shot] settings update button', JSON.stringify(du), duOk ? 'PASS' : 'FAIL');
-        console.log('[ota-shot] DONE', (updateState.type === 'downloaded' && duOk) ? 'PASS' : 'FAIL');
+        const flowOk = updateState.type === 'downloaded' && duOk;
+        // 消费标记防回环自检：模拟「已确认安装」（本次安装包 sha512 落盘）后，
+        // 同一 offer 再来必须被守卫按「已装即已拥有」静默跳过（up-to-date 且横幅不再弹）
+        let guardOk = false;
+        try {
+          if (pendingUpdateSha) {
+            persist({ updSha512: pendingUpdateSha });
+            updateState = { type: 'checking' };
+            autoUpdater.checkForUpdates();
+            const t1 = Date.now();
+            while (updateState.type !== 'up-to-date' && updateState.type !== 'available' && Date.now() - t1 < 15000) {
+              await new Promise(r => setTimeout(r, 500));
+            }
+            await new Promise(r => setTimeout(r, 400));
+            const b3 = await win.webContents.executeJavaScript(`(() => {
+              const cs = getComputedStyle(document.getElementById('updateBanner'));
+              return JSON.stringify({ hidden: cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.1 });
+            })()`);
+            guardOk = updateState.type === 'up-to-date' && JSON.parse(b3).hidden;
+          }
+        } catch (e) { guardOk = false; }
+        console.log('[ota-shot] consumed-sha guard', JSON.stringify({ sha: String(pendingUpdateSha).slice(0, 12), state: updateState.type }), guardOk ? 'PASS' : 'FAIL');
+        console.log('[ota-shot] DONE', (flowOk && guardOk) ? 'PASS' : 'FAIL');
       } catch (e) { console.error('[shot] failed', e); }
       app.exit(0);
     }, 8000);
@@ -1051,6 +1109,7 @@ let autoUpdater = null;
 let updateState = { type: 'idle' };
 let updateTimer = null;
 let checkWatchdog = null; // 检查看门狗：网络异常时更新请求可能永远挂起不回调，超时收场别让界面一直转圈
+let pendingUpdateSha = ''; // 本次下载完成的安装包 sha512；用户确认安装时落盘为消费标记（防同版本热修重推循环）
 
 function otaLog(...args) {
   console.log('[ota]', ...args);
@@ -1110,13 +1169,13 @@ function setupAutoUpdate() {
     autoUpdater.autoInstallOnAppQuit = false; // 安装需用户确认重启
     autoUpdater.on('checking-for-update', () => otaLog('checking'));
     autoUpdater.on('update-available', (info) => {
-      // 同版本热修重推防回环：重推占位号（如 1.0.17 热修用 1.0.18 触发）指向的仍是本版本
-      // 同名安装包 = 已装即已拥有，按「已是最新」收场，不弹横幅不循环下载。
-      // 真实新版本安装包名随版本递增（Setup-1.0.19.exe…），不会被此规则拦下。
-      const f = String((info && info.files && info.files[0] && (info.files[0].url || info.files[0].path)) || '');
-      const own = 'Setup-' + app.getVersion() + '.exe';
-      if (f.endsWith(own)) {
-        otaLog('skip same-version repush offer', f);
+      // 同版本热修重推防回环（消费标记法）：热修 latest.yml 触发号恒大于本版（否则过不了 semver 闸），
+      // 装没装过就看安装包字节——上次「立即重启」安装时记录的 sha512 与本次 offer 相同 = 已装即已拥有，
+      // 按「已是最新」收场，不弹横幅不循环下载；热修复换了新安装包（sha512 不同）→ 正常弹出安装。
+      // 旧规则「安装包名 == 本版本名即跳过」已废弃：热修包名必然=本版本名，会把热修 offer 永远静默吞掉。
+      const sha = String((info && info.files && info.files[0] && info.files[0].sha512) || '');
+      if (sha && sha === String(settings.updSha512 || '')) {
+        otaLog('skip consumed repush offer', sha.slice(0, 12));
         sendUpdateState({ type: 'up-to-date', current: app.getVersion() });
         return;
       }
@@ -1129,6 +1188,7 @@ function setupAutoUpdate() {
     });
     autoUpdater.on('download-progress', (p) => sendUpdateState({ type: 'downloading', percent: Math.round(p.percent || 0) }));
     autoUpdater.on('update-downloaded', (info) => {
+      pendingUpdateSha = String((info && info.files && info.files[0] && info.files[0].sha512) || '');
       otaLog('downloaded', info.version);
       sendUpdateState({ type: 'downloaded', version: info.version });
     });
@@ -1188,6 +1248,9 @@ function startUpdateDownload() {
 function installUpdate() {
   if (!autoUpdater) return;
   otaLog('quitAndInstall');
+  // 消费标记落盘：本次安装的安装包 sha512 → 重启后同 offer 按「已装」跳过（防循环弹窗）。
+  // 必须在「确认安装」这一刻记录而不是下载完成时——下载后点「稍后」并未拥有，offer 应继续弹。
+  if (pendingUpdateSha) { try { persist({ updSha512: pendingUpdateSha }); } catch (e) { } }
   try { autoUpdater.quitAndInstall(false, true); } catch (e) { otaLog('install error', String(e)); }
 }
 

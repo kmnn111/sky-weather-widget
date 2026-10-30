@@ -137,10 +137,12 @@ const Weather = (() => {
     return { lv: '极强', tip: '尽量不出门，全面防晒' };
   };
 
-  const carWash = (precipProb24, group) => {
-    if (group === 'rain' || group === 'snow' || group === 'thunder' || precipProb24 >= 50)
+  const carWash = (precipProb24, group, popDay = 0) => {
+    const dayWord = popDay === 0 ? '今天' : '明天';
+    if (group === 'rain' || group === 'snow' || group === 'thunder')
       return { lv: '不宜', tip: '近期有雨雪，洗车容易白洗' };
-    if (precipProb24 >= 30) return { lv: '较不宜', tip: '降水概率偏高，可再等等' };
+    if (precipProb24 >= 50) return { lv: '不宜', tip: `${dayWord}降水概率 ${precipProb24}%，洗车容易白洗` };
+    if (precipProb24 >= 30) return { lv: '较不宜', tip: `${dayWord}降水概率偏高（${precipProb24}%），可再等等` };
     return { lv: '适宜', tip: '未来无明显降水，适合洗车' };
   };
 
@@ -160,19 +162,42 @@ const Weather = (() => {
   };
 
   /* ---------- 提示条（类比气象预警） ---------- */
+  const dayWord = i => (i === 0 ? '今天' : i === 1 ? '明天' : '后天');
   function buildAlerts(daily, hourly) {
     const out = [];
     const maxTemp = Math.max(...daily.temperature_2m_max.slice(0, 3));
     const minTemp = Math.min(...daily.temperature_2m_min.slice(0, 3));
     const maxWind = Math.max(...(daily.wind_speed_10m_max || [0]).slice(0, 3));
     const maxUv = Math.max(...(daily.uv_index_max || [0]).slice(0, 3));
-    const precipProb = Math.max(...(daily.precipitation_probability_max || [0]).slice(0, 3));
     const codes = (daily.weather_code || []).slice(0, 3);
 
-    if (codes.some(c => [95, 96, 99].includes(c))) out.push({ tone: 'red', text: '未来三天有雷阵雨，注意防雷避雨' });
-    else if (codes.some(c => c >= 61 && c <= 67)) out.push({ tone: 'blue', text: '未来三天有降雨，出门记得带伞' });
-    else if (codes.some(c => c >= 71 && c <= 86)) out.push({ tone: 'blue', text: '未来三天有降雪，注意防滑保暖' });
-    if (precipProb >= 70) out.push({ tone: 'blue', text: `降水概率高达 ${precipProb}%，备好雨具` });
+    // 雷雨/降雨/降雪提醒：点名具体哪一天（比「未来三天」含糊说法更可读）
+    // 用 codeInfo 权威分组判定：旧区间判断会把阵雨 80-82 误判成降雪、漏掉毛毛雨 51-57
+    const grpOf = c => codeInfo(c, 1).group;
+    const thunderI = codes.findIndex(c => grpOf(c) === 'thunder');
+    const rainI = codes.findIndex(c => grpOf(c) === 'rain');
+    const snowI = codes.findIndex(c => grpOf(c) === 'snow');
+    let wetNamedI = -1;
+    if (thunderI >= 0) { wetNamedI = thunderI; out.push({ tone: 'red', text: `${dayWord(thunderI)}有雷阵雨，注意防雷避雨` }); }
+    else if (rainI >= 0) { wetNamedI = rainI; out.push({ tone: 'blue', text: `${dayWord(rainI)}有降雨，出门记得带伞` }); }
+    else if (snowI >= 0) { wetNamedI = snowI; out.push({ tone: 'blue', text: `${dayWord(snowI)}有降雪，注意防滑保暖` }); }
+
+    // 降水概率提醒：定位概率最高的一天并与该日降水量/天气码交叉校验——
+    // 概率与降水量是两套模型产物，可能出现「高概率 + 0mm + 非雨天码」，
+    // 不标日期、不校验就和预报卡片「无雨」自相矛盾（论坛反馈实证），措辞按证据强度分级
+    const pops = daily.precipitation_probability_max || [];
+    let bestI = -1, best = 0;
+    for (let i = 0; i < Math.min(3, pops.length); i++) {
+      const v = Math.round(pops[i] || 0);
+      if (v > best) { best = v; bestI = i; }
+    }
+    if (best >= 70 && bestI >= 0 && bestI !== wetNamedI) {
+      const sum = Number((daily.precipitation_sum || [])[bestI]) || 0;
+      const grp = codeInfo((daily.weather_code || [])[bestI], 1).group;
+      const wet = sum > 0.1 || grp === 'rain' || grp === 'snow' || grp === 'thunder';
+      if (wet) out.push({ tone: 'blue', text: `${dayWord(bestI)}降水概率 ${best}%，备好雨具` });
+      else out.push({ tone: 'green', text: `${dayWord(bestI)}可能有降水（概率 ${best}%），可备伞` });
+    }
     if (maxWind >= 39) out.push({ tone: 'orange', text: '风力较大（6级+），注意防风' });
     if (maxTemp >= 35) out.push({ tone: 'orange', text: '高温橙色提醒：注意防暑降温' });
     if (minTemp <= 0) out.push({ tone: 'orange', text: '气温将跌破冰点，注意防寒保暖' });

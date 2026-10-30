@@ -186,7 +186,7 @@
       temps.push(Number(h.temperature_2m[idx + i]) || 0);
       pops.push(Number(h.precipitation_probability[idx + i]) || 0);
     }
-    const VW = 424, VH = 86, padT = 14, padB = 16;
+    const VW = 424, VH = 98, padT = 14, padB = 16;
     const tMin = Math.min(...temps), tMax = Math.max(...temps);
     const span = Math.max(1, tMax - tMin);
     const x = i => (i / (n - 1)) * VW;
@@ -205,6 +205,16 @@
       const ph = Math.round((pops[i] / 100) * 12);
       if (ph > 0) bars += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(VH - padB + 3 - ph).toFixed(1)}" width="${bw.toFixed(1)}" height="${ph}" rx="1.5" class="tr-pop"/>`;
     }
+    // 横轴时间刻度：「现在」+ 每 6 小时整点，配浅色参考线（曲线点可对到钟点，和下方卡片时间对得上）
+    let ticks = '', grid = '';
+    for (let i = 1; i < n; i++) {
+      const hh = h.time[idx + i].slice(11, 13);
+      if (hh !== '00' && hh !== '06' && hh !== '12' && hh !== '18') continue;
+      const tx = Math.min(VW - 1, x(i));
+      grid += `<line x1="${tx.toFixed(1)}" y1="${padT - 4}" x2="${tx.toFixed(1)}" y2="${VH - padB + 3}" class="tr-grid"/>`;
+      ticks += `<text x="${tx.toFixed(1)}" y="${VH - 1}" class="tr-tick" text-anchor="${i >= n - 2 ? 'end' : 'middle'}">${Number(hh)}时</text>`;
+    }
+    ticks = `<text x="1" y="${VH - 1}" class="tr-tick" text-anchor="start">现在</text>` + ticks;
     // 端点温度标注（只标首/尾/最高/最低，避免文字堆叠）
     const marks = [[0, temps[0], 'start'], [n - 1, temps[n - 1], 'end']];
     let minI = 0, maxI = 0;
@@ -216,7 +226,7 @@
       (kind === 'mid' ? `<text x="${x(i).toFixed(1)}" y="${(y(t) - 7).toFixed(1)}" class="tr-lab">${Math.round(t)}°</text>` : '')
     ).join('');
     el.innerHTML = `<svg viewBox="0 0 ${VW} ${VH}" width="100%" height="${VH}" preserveAspectRatio="none" aria-hidden="true">
-      <path d="${dpath}" class="tr-line"/>${bars}${dots}</svg>`;
+      ${grid}<path d="${dpath}" class="tr-line"/>${bars}${dots}${ticks}</svg>`;
   }
 
   /* ---------- 分钟级降水条（hero 内紧凑单条：8 柱 × 15 分钟 + 智能摘要） ---------- */
@@ -428,6 +438,20 @@
     }).join('') + `<div class="aqi-cell" style="grid-column:1/3;opacity:.6"><span>单位 μg/m³（CO 为 mg/m³）</span></div>`;
   }
 
+  /* ---------- 模块显隐（设置面板「显示模块」；隐藏即 display:none，零渲染开销） ---------- */
+  const MOD_KEYS = ['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac'];
+  const MOD_TARGET = { globe: 'modGlobe', hourly: 'modHourly', daily: 'modDaily', aqi: 'modAqi', life: 'modLife', almanac: 'modAlmanac' };
+  function applyModules() {
+    const m = (state.settings && state.settings.modules) || {};
+    for (const k of MOD_KEYS) {
+      const el = $(MOD_TARGET[k]);
+      if (el) el.classList.toggle('mod-off', m[k] === false);
+    }
+    // 空气质量/生活指南同排：只关一个时另一个占满整行
+    const duo = document.querySelector('.duo');
+    if (duo) duo.classList.toggle('single', (m.aqi === false) !== (m.life === false));
+  }
+
   const TONE_BAD = ['不宜', '极强', '严寒', '寒冷', '重度污染', '严重污染'];
   const TONE_WARN = ['较不宜', '不太适宜', '很强', '强', '热', '炎热', '冷', '易发', '较易发', '轻度污染', '中度污染'];
   function toneOf(lv) {
@@ -444,13 +468,19 @@
     const wind = c.wind_speed_10m;
     const vis = w.hourly.visibility && w.hourly.visibility.length ? w.hourly.visibility[0] : null;
 
-    const precipProb24 = Math.max(...(d.precipitation_probability_max || [0]).slice(0, 2));
+    // 洗车概率：未来两天取概率最高的一天，并带上日期口径（和提示条一致）
+    const pops2 = d.precipitation_probability_max || [];
+    let popDay = 0, precipProb24 = 0;
+    for (let i = 0; i < Math.min(2, pops2.length); i++) {
+      const v = Math.round(pops2[i] || 0);
+      if (v > precipProb24) { precipProb24 = v; popDay = i; }
+    }
     const dayNightDiff = Math.abs(d.temperature_2m_max[0] - d.temperature_2m_min[0]);
 
     const dress = Weather.clothing(feels, group === 'rain' || group === 'thunder' || group === 'snow');
     const trip = Weather.travel(group, wind, vis, feels);
     const uvI = Weather.uv(d.uv_index_max[0]);
-    const wash = Weather.carWash(precipProb24, group);
+    const wash = Weather.carWash(precipProb24, group, popDay);
     const sportI = Weather.sport(group, feels, wind);
     const coldI = Weather.cold(dayNightDiff, feels);
 
@@ -836,6 +866,16 @@
     $('chkBrief').addEventListener('change', async e => {
       state.settings = await sky.updateSettings({ brief: e.target.checked });
     });
+    // 显示模块开关：隐藏即 display:none（长模块可关，论坛反馈采纳），默认全部显示
+    for (const k of MOD_KEYS) {
+      const chk = $('chkMod' + k.charAt(0).toUpperCase() + k.slice(1));
+      if (!chk) continue;
+      chk.addEventListener('change', async e => {
+        const m = Object.assign({}, state.settings.modules || {}, { [k]: e.target.checked });
+        state.settings = await sky.updateSettings({ modules: m });
+        applyModules();
+      });
+    }
 
     // 软件更新
     $('btnCheckUpdate').addEventListener('click', () => {
@@ -1065,6 +1105,11 @@
     $('chkEdgeDock').checked = state.settings.edgeDock !== false;
     $('chkTrayTemp').checked = state.settings.trayTemp !== false;
     $('chkBrief').checked = state.settings.brief !== false;
+    for (const k of MOD_KEYS) {
+      const chk = $('chkMod' + k.charAt(0).toUpperCase() + k.slice(1));
+      if (chk) chk.checked = (state.settings.modules || {})[k] !== false;
+    }
+    applyModules();
     $('updateUrlInput').value = state.settings.updateUrl || '';
 
     // 吸顶温度小窗：状态同步 + 悬停展开/收起
