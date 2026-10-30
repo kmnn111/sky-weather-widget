@@ -186,7 +186,7 @@
       temps.push(Number(h.temperature_2m[idx + i]) || 0);
       pops.push(Number(h.precipitation_probability[idx + i]) || 0);
     }
-    const VW = 424, VH = 98, padT = 14, padB = 16;
+    const VW = 424, VH = 108, padT = 14, padB = 26;
     const tMin = Math.min(...temps), tMax = Math.max(...temps);
     const span = Math.max(1, tMax - tMin);
     const x = i => (i / (n - 1)) * VW;
@@ -198,12 +198,20 @@
       dpath += ` Q${x(i).toFixed(1)},${y(temps[i]).toFixed(1)} ${cx.toFixed(1)},${cy.toFixed(1)}`;
     }
     dpath += ` T${x(n - 1).toFixed(1)},${y(temps[n - 1]).toFixed(1)}`;
-    // 降水概率底柱（0-100% → 12px 底部条带）
-    let bars = '';
+    // 降水概率底柱（0-100% → 12px 底部条带）；取整为 0 的时刻标「0%」数值直给。
+    // 草芽图形已移除：会与温度曲线低位重叠（2026-10-30 用户反馈），0% 小字保留
+    let bars = '', zeros = '';
     const bw = Math.max(3, VW / n - 4);
     for (let i = 0; i < n; i++) {
-      const ph = Math.round((pops[i] / 100) * 12);
-      if (ph > 0) bars += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(VH - padB + 3 - ph).toFixed(1)}" width="${bw.toFixed(1)}" height="${ph}" rx="1.5" class="tr-pop"/>`;
+      if (Math.round(pops[i]) > 0) {
+        const ph = Math.max(1.5, (pops[i] / 100) * 12);
+        bars += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(VH - padB + 3 - ph).toFixed(1)}" width="${bw.toFixed(1)}" height="${ph.toFixed(1)}" rx="1.5" class="tr-pop"/>`;
+      } else {
+        // 端点用 start/end 锚定贴边，不钳位防挤字
+        const anchor = i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle');
+        const lx = i === 0 ? 1 : (i === n - 1 ? VW - 1 : x(i));
+        zeros += `<text x="${lx.toFixed(1)}" y="${VH - 13}" class="tr-zero" text-anchor="${anchor}">0%</text>`;
+      }
     }
     // 横轴时间刻度：「现在」+ 每 6 小时整点，配浅色参考线（曲线点可对到钟点，和下方卡片时间对得上）
     let ticks = '', grid = '';
@@ -211,6 +219,7 @@
       const hh = h.time[idx + i].slice(11, 13);
       if (hh !== '00' && hh !== '06' && hh !== '12' && hh !== '18') continue;
       const tx = Math.min(VW - 1, x(i));
+      if (tx < 34) continue; // 离「现在」太近的整点不标，避免刻度文字重叠（起点恰在整点前时会挤在一起）
       grid += `<line x1="${tx.toFixed(1)}" y1="${padT - 4}" x2="${tx.toFixed(1)}" y2="${VH - padB + 3}" class="tr-grid"/>`;
       ticks += `<text x="${tx.toFixed(1)}" y="${VH - 1}" class="tr-tick" text-anchor="${i >= n - 2 ? 'end' : 'middle'}">${Number(hh)}时</text>`;
     }
@@ -226,7 +235,7 @@
       (kind === 'mid' ? `<text x="${x(i).toFixed(1)}" y="${(y(t) - 7).toFixed(1)}" class="tr-lab">${Math.round(t)}°</text>` : '')
     ).join('');
     el.innerHTML = `<svg viewBox="0 0 ${VW} ${VH}" width="100%" height="${VH}" preserveAspectRatio="none" aria-hidden="true">
-      ${grid}<path d="${dpath}" class="tr-line"/>${bars}${dots}${ticks}</svg>`;
+      ${grid}<path d="${dpath}" class="tr-line"/>${bars}<g class="tr-zeros">${zeros}</g>${dots}${ticks}</svg>`;
   }
 
   /* ---------- 分钟级降水条（hero 内紧凑单条：8 柱 × 15 分钟 + 智能摘要） ---------- */
@@ -263,9 +272,13 @@
         summary = `约 ${firstWet * 15} 分钟后开始下${word}`;
       }
     }
+    const sproutSVG = '<svg width="10" height="11" viewBox="0 0 10 11" aria-hidden="true"><g transform="translate(5,10)"><path d="M0,0 C0,-2 0,-3 0,-4.2" class="sprout-stem"/><path d="M-0.2,-2.2 C-1.4,-1.9 -2.6,-2.6 -3.1,-4 C-1.7,-4.3 -0.6,-3.5 -0.2,-2.2 Z" class="sprout-leaf"/><path d="M0.2,-3.4 C1.1,-3.6 2,-4.3 2.3,-5.6 C1.1,-5.5 0.4,-4.6 0.2,-3.4 Z" class="sprout-leaf"/></g></svg>';
     const bars = slots.map((s, i) => {
-      const h = s.p <= 0.05 ? 2 : Math.max(4, Math.round((s.p / maxP) * 30));
-      return `<i class="mm-bar ${s.p > 0.05 ? (isSnowCode(s.code) ? 'snow' : 'rain') : 'dry'}" style="height:${h}px" title="${i * 15}分钟后 ${s.p.toFixed(1)}mm"></i>`;
+      const t0 = `${i * 15}分钟后`;
+      if (s.p <= 0.05) return `<i class="mm-slot"><b class="mm-val zero">0mm</b><i class="mm-sprout" title="${t0} 无降水">${sproutSVG}</i></i>`; // 无降水槽位长草芽 + 0mm 直给
+      const h = Math.max(4, Math.round((s.p / maxP) * 30));
+      const snow = isSnowCode(s.code);
+      return `<i class="mm-slot"><b class="mm-val ${snow ? 'snow' : 'rain'}">${s.p.toFixed(1)}mm</b><i class="mm-bar ${snow ? 'snow' : 'rain'}" style="height:${h}px" title="${t0} ${s.p.toFixed(1)}mm"></i></i>`;
     }).join('');
     el.innerHTML = `<div class="mm-head"><span class="mm-title">未来2小时降水</span><span class="mm-sum">${esc(summary)}</span></div>
       <div class="mm-bars">${bars}</div>
@@ -450,6 +463,86 @@
     // 空气质量/生活指南同排：只关一个时另一个占满整行
     const duo = document.querySelector('.duo');
     if (duo) duo.classList.toggle('single', (m.aqi === false) !== (m.life === false));
+  }
+
+  /* ---------- 模块排序（设置「显示模块」≡ 手柄拖动换位，顺序记忆；duo 整体参与） ---------- */
+  const MOD_ORDER_DEFAULT = ['globe', 'hourly', 'daily', 'duo', 'almanac'];
+  const MOD_NODE = { globe: 'modGlobe', hourly: 'modHourly', daily: 'modDaily', duo: 'modDuo', almanac: 'modAlmanac' };
+  function modOrder() {
+    const ord = state.settings && state.settings.modulesOrder;
+    if (!Array.isArray(ord)) return MOD_ORDER_DEFAULT;
+    const out = ord.filter((k, i) => MOD_ORDER_DEFAULT.includes(k) && ord.indexOf(k) === i);
+    for (const k of MOD_ORDER_DEFAULT) if (!out.includes(k)) out.push(k);
+    return out;
+  }
+  function applyOrder() {
+    const parent = $('modGlobe') && $('modGlobe').parentElement;
+    if (!parent) return;
+    for (const k of modOrder()) {
+      const el = $(MOD_NODE[k]);
+      if (el) parent.appendChild(el); // 按序 append 即重排，5 个节点开销可忽略
+    }
+  }
+  function initModSort() {
+    const list = $('modSort');
+    if (!list) return;
+    const syncListOrder = () => {
+      for (const k of modOrder()) {
+        const row = list.querySelector(`.mod-row[data-mod="${k}"]`);
+        if (row) list.appendChild(row);
+      }
+    };
+    syncListOrder();
+    let drag = null;
+    const finish = () => {
+      if (!drag) return;
+      const d = drag; drag = null;
+      d.row.classList.remove('dragging');
+      d.rows.forEach(r => { r.style.transform = ''; });
+      if (d.target !== d.from) {
+        const ord = modOrder();
+        const [moved] = ord.splice(d.from, 1);
+        ord.splice(d.target, 0, moved);
+        state.settings = Object.assign({}, state.settings, { modulesOrder: ord });
+        sky.updateSettings({ modulesOrder: ord }).then(s => { if (s) state.settings = s; });
+        syncListOrder();
+        applyOrder();
+      }
+    };
+    list.addEventListener('pointerdown', e => {
+      const handle = e.target.closest && e.target.closest('.mod-handle');
+      if (!handle || drag) return;
+      const row = handle.closest('.mod-row');
+      if (!row) return;
+      e.preventDefault();
+      const rows = [...list.querySelectorAll('.mod-row')];
+      drag = { row, rows, startY: e.clientY, from: rows.indexOf(row), target: rows.indexOf(row), h: row.offsetHeight + 6 };
+      try { handle.setPointerCapture(e.pointerId); } catch (err) { } // 捕获失败走 blur/lostpointercapture 兜底
+      row.classList.add('dragging');
+    });
+    list.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const dy = e.clientY - drag.startY;
+      drag.row.style.transform = `translateY(${dy}px) translateX(8px)`;
+      const target = Math.max(0, Math.min(drag.rows.length - 1, drag.from + Math.round(dy / drag.h)));
+      if (target === drag.target) return;
+      drag.target = target;
+      drag.rows.forEach((r, i) => { // 挤开空位：目标区间内的行反向平移一格
+        if (r === drag.row) return;
+        let off = 0;
+        if (target > drag.from && i > drag.from && i <= target) off = -drag.h;
+        else if (target < drag.from && i >= target && i < drag.from) off = drag.h;
+        r.style.transform = off ? `translateY(${off}px)` : '';
+      });
+    });
+    list.addEventListener('pointerup', finish);
+    list.addEventListener('pointercancel', finish);
+    list.addEventListener('lostpointercapture', finish);
+    // 兜底：指针捕获失效（合成输入/个别设备）或拖出列表外松手时，pointerup 不冒泡到 list，
+    // 没有 window 级收尾会卡死在拖动态（行悬空跟随）——window 上收一次，finish 内 drag 判空天然防重入
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    window.addEventListener('blur', finish);
   }
 
   const TONE_BAD = ['不宜', '极强', '严寒', '寒冷', '重度污染', '严重污染'];
@@ -1110,6 +1203,8 @@
       if (chk) chk.checked = (state.settings.modules || {})[k] !== false;
     }
     applyModules();
+    applyOrder();
+    initModSort();
     $('updateUrlInput').value = state.settings.updateUrl || '';
 
     // 吸顶温度小窗：状态同步 + 悬停展开/收起

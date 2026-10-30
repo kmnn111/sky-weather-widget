@@ -96,7 +96,7 @@
     </section>
 
     <!-- 空气质量 + 生活指数 -->
-    <section class="duo">
+    <section class="duo" id="modDuo">
       <div class="card aqi-card" id="modAqi">
         <div class="card-title">空气质量</div>
         <div class="aqi-main">
@@ -195,12 +195,36 @@
       <label class="check"><input type="checkbox" id="chkBrief" /> 天气早晚报（每天 8:00 / 20:00 通知播报）</label>
 
       <h4>显示模块</h4>
-      <label class="check"><input type="checkbox" id="chkModGlobe" /> 昼夜地球</label>
-      <label class="check"><input type="checkbox" id="chkModHourly" /> 逐时预报（含趋势曲线）</label>
-      <label class="check"><input type="checkbox" id="chkModDaily" /> 七日预报</label>
-      <label class="check"><input type="checkbox" id="chkModAqi" /> 空气质量</label>
-      <label class="check"><input type="checkbox" id="chkModLife" /> 生活指南</label>
-      <label class="check"><input type="checkbox" id="chkModAlmanac" /> 万年历</label>
+      <div class="mod-sort" id="modSort">
+        <div class="mod-row" data-mod="globe">
+          <span class="mod-handle" title="拖动排序"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">昼夜地球</span>
+          <input type="checkbox" id="chkModGlobe" />
+        </div>
+        <div class="mod-row" data-mod="hourly">
+          <span class="mod-handle" title="拖动排序"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">逐时预报（含趋势曲线）</span>
+          <input type="checkbox" id="chkModHourly" />
+        </div>
+        <div class="mod-row" data-mod="daily">
+          <span class="mod-handle" title="拖动排序"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">七日预报</span>
+          <input type="checkbox" id="chkModDaily" />
+        </div>
+        <div class="mod-row" data-mod="duo">
+          <span class="mod-handle" title="拖动排序（空气质量与生活指南同排，一起移动）"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">空气质量 · 生活指南</span>
+          <span class="mod-duo">
+            <label class="mini"><input type="checkbox" id="chkModAqi" title="显示空气质量" />空气</label>
+            <label class="mini"><input type="checkbox" id="chkModLife" title="显示生活指南" />生活</label>
+          </span>
+        </div>
+        <div class="mod-row" data-mod="almanac">
+          <span class="mod-handle" title="拖动排序"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">万年历</span>
+          <input type="checkbox" id="chkModAlmanac" />
+        </div>
+      </div>
 
       <button class="wide-btn danger" id="btnQuit">退出程序</button>
 

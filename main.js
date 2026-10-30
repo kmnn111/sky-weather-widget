@@ -237,8 +237,9 @@ function checkSnap() {
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings);
   // 设置写入白名单：渲染层只允许改这几个键（防任意键注入/原型污染/updateUrl 被劫持到恶意更新源）
-  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules']);
+  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules', 'modulesOrder']);
   const MODULE_KEYS = new Set(['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac']);
+  const MODULE_ORDER = new Set(['globe', 'hourly', 'daily', 'duo', 'almanac']);
   ipcMain.handle('settings:update', (_e, patch) => {
     const safe = {};
     if (patch && typeof patch === 'object') {
@@ -264,6 +265,18 @@ function registerIpc() {
               if (MODULE_KEYS.has(mk) && typeof v[mk] === 'boolean') m[mk] = v[mk];
             }
             safe.modules = m;
+          }
+        } else if (k === 'modulesOrder') {
+          // 排序数组：只收合法键去重，缺项按默认序补尾（同 modules 的显式分支教训）
+          if (Array.isArray(v)) {
+            const seen = new Set();
+            const arr = [];
+            for (const item of v) {
+              const s = String(item);
+              if (MODULE_ORDER.has(s) && !seen.has(s)) { seen.add(s); arr.push(s); }
+            }
+            for (const s of ['globe', 'hourly', 'daily', 'duo', 'almanac']) if (!seen.has(s)) arr.push(s);
+            safe.modulesOrder = arr;
           }
         } else if (typeof v === 'boolean' || k === 'unit' || k === 'autoLocate') {
           safe[k] = v;
@@ -541,8 +554,15 @@ function createWindow() {
         await win.webContents.executeJavaScript('document.getElementById("widget").scrollTop = 999999');
         await new Promise(r => setTimeout(r, 800));
         await shoot('shot-14-night-bottom.png');
-        await win.webContents.executeJavaScript('document.body.classList.remove("night"); document.getElementById("widget").scrollTop = 0');
-        await new Promise(r => setTimeout(r, 600));
+        // 强制白天版式抓趋势图：先关设置面板（534 起一直开着），0%/mm 数值浅色配色目检（与 shot-2 自然主题互补）。
+        // 取景跟 trendWrap 走（写死 scrollTop 会随内容高度漂移裁掉曲线）
+        await win.webContents.executeJavaScript('document.getElementById("closeSettings").click()');
+        await new Promise(r => setTimeout(r, 400));
+        await win.webContents.executeJavaScript('document.body.classList.remove("night"); (() => { const w = document.getElementById("widget"), t = document.getElementById("trendWrap"); w.scrollTop += t.getBoundingClientRect().top - w.getBoundingClientRect().top - 130; })()');
+        await new Promise(r => setTimeout(r, 500));
+        await shoot('shot-14b-day-trend.png');
+        await win.webContents.executeJavaScript('document.getElementById("widget").scrollTop = 0');
+        await new Promise(r => setTimeout(r, 300));
         // IME 守卫：中文输入法确认候选词的 Enter（isComposing）不得触发搜索；普通 Enter 必须触发
         const imeRes = JSON.parse(await win.webContents.executeJavaScript(`(() => {
           const inp = document.getElementById('searchInput');
@@ -594,6 +614,12 @@ function createWindow() {
         expandDock();
         await new Promise(r => setTimeout(r, 600));
         await shoot('shot-15-night-full.png');            // 夜色完整窗
+        // 夜色趋势图目检镜头：0%/横轴刻度的夜色样式（与 shot-14b 白天同取景，防夜色回归）
+        await win.webContents.executeJavaScript('(() => { const w = document.getElementById("widget"), t = document.getElementById("trendWrap"); w.scrollTop += t.getBoundingClientRect().top - w.getBoundingClientRect().top - 130; })()');
+        await new Promise(r => setTimeout(r, 500));
+        await shoot('shot-15b-night-trend.png');
+        await win.webContents.executeJavaScript('document.getElementById("widget").scrollTop = 0');
+        await new Promise(r => setTimeout(r, 300));
         collapseDock();
         // 形变真值探针（v1.0.16）：逐帧采样 #sky 宽度——收起必须是插值形变而非瞬间硬切。
         // capturePage 抓不到可靠中间帧，用页面内 rAF 采样做断言。
@@ -643,7 +669,7 @@ function createWindow() {
         // ---- v1.0.17 新功能自检：分钟级降水 / 24h 趋势 / 朝晚霞 / 托盘温度 / 早晚报 ----
         const nf = JSON.parse(await win.webContents.executeJavaScript(`(() => {
           const mm = document.getElementById('mmWrap');
-          const bars = mm ? mm.querySelectorAll('.mm-bar') : [];
+          const bars = mm ? mm.querySelectorAll('.mm-bar, .mm-sprout') : []; // 槽位=柱或草芽（俏皮彩蛋后无雨槽是草芽）
           const sum = mm ? (mm.querySelector('.mm-sum') || {}).textContent || '' : '';
           const trend = document.getElementById('trendWrap');
           const path = trend ? trend.querySelector('path.tr-line') : null;
@@ -655,7 +681,7 @@ function createWindow() {
           return JSON.stringify({
             mmBars: bars.length, mmSum: sum,
             trendLen: path ? (path.getAttribute('d') || '').length : 0,
-            trendPops: trend ? trend.querySelectorAll('rect.tr-pop').length : 0,
+            trendPops: trend ? trend.querySelectorAll('rect.tr-pop').length + trend.querySelectorAll('text.tr-zero').length : 0, // 概率柱+0%标注=完整槽位覆盖
             glowDawn: glow.dawn ? glow.dawn.label : '', glowDusk: glow.dusk ? glow.dusk.label : '',
             chipsHasGlow: chips.indexOf('朝霞') !== -1 && chips.indexOf('晚霞') !== -1,
             trayOk: tray.indexOf('data:image/png') === 0 && tray.length > 500,
@@ -678,6 +704,19 @@ function createWindow() {
           });
         })()`));
         console.log('[trend-test] time ticks', JSON.stringify(tt), (tt.ticks >= 3 && tt.grids >= 2) ? 'PASS' : 'FAIL');
+        // 0 值标注自检：趋势图每时刻非「概率柱」即「0%」标注覆盖完整；草芽图形必须为 0（已移除：与温度曲线重叠）；
+        // 分钟级 8 槽为柱或草芽、每槽有 mm 数值（0mm 直给不靠猜）
+        const spr = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const t = document.getElementById('trendWrap');
+          return JSON.stringify({
+            pops: t ? t.querySelectorAll('.tr-pop').length : 0,
+            sprouts: t ? t.querySelectorAll('.tr-sprouts > g').length : 0,
+            zeros: t ? t.querySelectorAll('text.tr-zero').length : 0,
+            mm: document.querySelectorAll('#mmWrap .mm-bar, #mmWrap .mm-sprout').length,
+            mmVals: document.querySelectorAll('#mmWrap .mm-val').length
+          });
+        })()`));
+        console.log('[sprout-test] zero-witty', JSON.stringify(spr), (spr.sprouts === 0 && spr.pops + spr.zeros >= 20 && spr.mm === 8 && spr.mmVals === 8) ? 'PASS' : 'FAIL');
         // 模块开关：真实走设置面板勾选链路（change → updateSettings → applyModules），测完还原
         await win.webContents.executeJavaScript(`document.getElementById("btnSettings").click()`);
         await new Promise(r => setTimeout(r, 500));
@@ -693,6 +732,34 @@ function createWindow() {
         })()`);
         await new Promise(r => setTimeout(r, 600));
         const modOn = await win.webContents.executeJavaScript(`getComputedStyle(document.getElementById('modAlmanac')).display !== 'none'`);
+        // 模块排序：真实拖动 ≡ 手柄把「万年历」拖到列表首行手柄上（sendInputEvent 真实鼠标链路），验证持久化 + 主界面重排。
+        // 必须与初始顺序无关：shot profile 跨运行保留 modulesOrder，若上次已把万年历拖到顶，
+        // 「拖到 globe 位置」会变成向下拖一行（实测翻车）；拖到「首行手柄」在任意初始顺序下语义一致（已在顶则无操作）。
+        // 落点必须留在列表内：合成输入下 setPointerCapture 不生效时，列表外松手的 pointerup 不冒泡到 #modSort（现已有 window 兜底，双保险）。
+        await win.webContents.executeJavaScript(`document.getElementById('modSort').scrollIntoView({ block: 'center' })`);
+        await new Promise(r => setTimeout(r, 400));
+        const hd = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const a = document.querySelector('.mod-row[data-mod="almanac"] .mod-handle').getBoundingClientRect();
+          const f = document.querySelector('#modSort .mod-row .mod-handle').getBoundingClientRect();
+          return JSON.stringify({ ax: Math.round(a.x + a.width / 2), ay: Math.round(a.y + a.height / 2), fy: Math.round(f.y + f.height / 2) });
+        })()`));
+        await win.webContents.sendInputEvent({ type: 'mouseMove', x: hd.ax, y: hd.ay });
+        await win.webContents.sendInputEvent({ type: 'mouseDown', x: hd.ax, y: hd.ay, button: 'left', clickCount: 1 });
+        for (let i = 1; i <= 6; i++) {
+          await win.webContents.sendInputEvent({ type: 'mouseMove', x: hd.ax, y: Math.round(hd.ay + (hd.fy - hd.ay) * i / 6) });
+          await new Promise(r => setTimeout(r, 80));
+        }
+        await win.webContents.sendInputEvent({ type: 'mouseUp', x: hd.ax, y: hd.fy, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 700));
+        const mo = JSON.parse(await win.webContents.executeJavaScript(`(async () => {
+          const kids = [...document.getElementById('widget').children].filter(e => /^mod(Globe|Hourly|Daily|Duo|Almanac)$/.test(e.id)).map(e => e.id);
+          const s = await sky.getSettings();
+          return JSON.stringify({ first: kids[0] || '', ord: (s.modulesOrder || []).join(',') });
+        })()`));
+        const moOk = mo.first === 'modAlmanac' && mo.ord.startsWith('almanac');
+        console.log('[modorder-test] drag-to-top', JSON.stringify(mo), moOk ? 'PASS' : 'FAIL');
+        // 复位默认顺序：shot profile 落盘状态不残留到下次运行（启动 init 会按落盘顺序应用）
+        await win.webContents.executeJavaScript(`sky.updateSettings({ modulesOrder: ['globe','hourly','daily','duo','almanac'] })`);
         await win.webContents.executeJavaScript(`document.getElementById("closeSettings").click()`);
         console.log('[mod-test] toggle', JSON.stringify({ modOff, modOn }), (modOff && modOn) ? 'PASS' : 'FAIL');
         // 截图调试不留存档状态
