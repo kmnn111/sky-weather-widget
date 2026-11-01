@@ -452,8 +452,16 @@
   }
 
   /* ---------- 模块显隐（设置面板「显示模块」；隐藏即 display:none，零渲染开销） ---------- */
-  const MOD_KEYS = ['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac'];
-  const MOD_TARGET = { globe: 'modGlobe', hourly: 'modHourly', daily: 'modDaily', aqi: 'modAqi', life: 'modLife', almanac: 'modAlmanac' };
+  const MOD_KEYS = ['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac',
+    'uv', 'pollen', 'wind', 'visib', 'dress', 'carwash', 'dry', 'cold',
+    'moon', 'history', 'precipstat', 'pressure', 'cities', 'radar', 'alerts', 'share'];
+  const MOD_TARGET = {
+    globe: 'modGlobe', hourly: 'modHourly', daily: 'modDaily', aqi: 'modAqi', life: 'modLife', almanac: 'modAlmanac',
+    uv: 'modUv', pollen: 'modPollen', wind: 'modWind', visib: 'modVisib',
+    dress: 'modDress', carwash: 'modCarwash', dry: 'modDry', cold: 'modCold',
+    moon: 'modMoon', history: 'modHistory', precipstat: 'modPrecipstat', pressure: 'modPressure',
+    cities: 'modCities', radar: 'modRadar', alerts: 'modAlerts', share: 'modShare'
+  };
   function applyModules() {
     const m = (state.settings && state.settings.modules) || {};
     for (const k of MOD_KEYS) {
@@ -463,11 +471,25 @@
     // 空气质量/生活指南同排：只关一个时另一个占满整行
     const duo = document.querySelector('.duo');
     if (duo) duo.classList.toggle('single', (m.aqi === false) !== (m.life === false));
+    // 四联组：组内 4 卡全关时整组隐藏（组仍参与排序，只是不显示）
+    const quads = [
+      ['modQuadReal', ['uv', 'pollen', 'wind', 'visib']],
+      ['modQuadLife4', ['dress', 'carwash', 'dry', 'cold']],
+      ['modQuadClimate', ['moon', 'history', 'precipstat', 'pressure']],
+      ['modQuadPlay', ['cities', 'radar', 'alerts', 'share']]
+    ];
+    for (const [qid, keys] of quads) {
+      const q = $(qid);
+      if (q) q.classList.toggle('mod-off', keys.every(k => m[k] === false));
+    }
   }
 
   /* ---------- 模块排序（设置「显示模块」≡ 手柄拖动换位，顺序记忆；duo 整体参与） ---------- */
-  const MOD_ORDER_DEFAULT = ['globe', 'hourly', 'daily', 'duo', 'almanac'];
-  const MOD_NODE = { globe: 'modGlobe', hourly: 'modHourly', daily: 'modDaily', duo: 'modDuo', almanac: 'modAlmanac' };
+  const MOD_ORDER_DEFAULT = ['globe', 'hourly', 'daily', 'duo', 'real', 'life4', 'climate', 'play', 'almanac'];
+  const MOD_NODE = {
+    globe: 'modGlobe', hourly: 'modHourly', daily: 'modDaily', duo: 'modDuo',
+    real: 'modQuadReal', life4: 'modQuadLife4', climate: 'modQuadClimate', play: 'modQuadPlay', almanac: 'modAlmanac'
+  };
   function modOrder() {
     const ord = state.settings && state.settings.modulesOrder;
     if (!Array.isArray(ord)) return MOD_ORDER_DEFAULT;
@@ -480,7 +502,7 @@
     if (!parent) return;
     for (const k of modOrder()) {
       const el = $(MOD_NODE[k]);
-      if (el) parent.appendChild(el); // 按序 append 即重排，5 个节点开销可忽略
+      if (el) parent.appendChild(el); // 按序 append 即重排，9 个节点开销可忽略
     }
   }
   function initModSort() {
@@ -622,6 +644,7 @@
   function renderAll() {
     try {
       renderHero(); renderMinutely(); renderHourly(); renderDaily(); renderAQI(); renderLife(); renderPill();
+      if (window.Extra) window.Extra.renderAll(state.data, state.settings, state.loc); // 16 扩展模块
       updateSky();
       updateTrayTemp();
       if (window.Globe) Globe.update(state.loc, state.data && state.data.weather ? state.data.weather.daily : null);
@@ -967,6 +990,7 @@
         const m = Object.assign({}, state.settings.modules || {}, { [k]: e.target.checked });
         state.settings = await sky.updateSettings({ modules: m });
         applyModules();
+        if (window.Extra) window.Extra.renderAll(state.data, state.settings, state.loc); // 懒加载模块即时出数据
       });
     }
 
@@ -1273,6 +1297,10 @@
     applyModules();
     applyOrder();
     initModSort();
+    if (window.Extra) { // 扩展模块回调注入：多城市点击切换主城市 / 跳设置面板
+      window.Extra.hooks.switchLocation = switchLocation;
+      window.Extra.hooks.openPanel = openPanel;
+    }
     $('updateUrlInput').value = state.settings.updateUrl || '';
 
     // 吸顶温度小窗：状态同步 + 悬停展开/收起

@@ -80,19 +80,79 @@ function migrateLocations() {
 async function fetchWeather(lat, lon) {
   const f = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,weather_code,` +
-    `cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
+    `cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility` +
     `&hourly=temperature_2m,weather_code,precipitation_probability,precipitation,is_day,uv_index,` +
     `wind_speed_10m,wind_direction_10m,relative_humidity_2m,visibility,apparent_temperature,` +
-    `cloud_cover_low,cloud_cover_mid,cloud_cover_high` +
+    `cloud_cover_low,cloud_cover_mid,cloud_cover_high,pressure_msl` +
     `&minutely_15=precipitation,weather_code` +
     `&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,` +
     `sunrise,sunset,uv_index_max,precipitation_sum,precipitation_probability_max,wind_speed_10m_max` +
     `&timezone=auto&forecast_days=7`;
   const a = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
     `&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,us_aqi,european_aqi` +
-    `&timezone=auto`;
+    `&hourly=alder_pollen,birch_pollen,grass_pollen,ragweed_pollen` +
+    `&timezone=auto&forecast_days=3`;
   const [w, q] = await Promise.all([got(f, 15000), got(a, 15000).catch(() => null)]);
   return { weather: w, air: q, fetchedAt: Date.now() };
+}
+
+/* ---------------- 历史气候（open-meteo archive，24h 缓存） ----------------
+   两路数据：hist=近10年「今天」均温（常年对比/去年今天），recent=近35天降水（周月统计） */
+const archiveCache = { key: '', ts: 0, data: null };
+async function fetchArchive(lat, lon) {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  if (archiveCache.key === key && Date.now() - archiveCache.ts < 24 * 3600 * 1000 && archiveCache.data) return archiveCache.data;
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const y = now.getFullYear();
+  const iso = d => d.toISOString().slice(0, 10);
+  const histUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+    `&start_date=${y - 10}-${mm}-${dd}&end_date=${y - 1}-${mm}-${dd}` +
+    `&daily=temperature_2m_mean&timezone=auto`;
+  const recentUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+    `&start_date=${iso(new Date(now.getTime() - 35 * 864e5))}&end_date=${iso(new Date(now.getTime() - 6 * 864e5))}` +
+    `&daily=precipitation_sum&timezone=auto`;
+  const [hist, recent] = await Promise.all([got(histUrl, 20000), got(recentUrl, 20000).catch(() => null)]);
+  archiveCache.key = key; archiveCache.ts = Date.now(); archiveCache.data = { hist, recent, fetchedAt: Date.now() };
+  return archiveCache.data;
+}
+
+/* ---------------- 降水雷达帧索引（RainViewer，失败返回 null 优雅降级） ---------------- */
+let radarCache = { ts: 0, data: null };
+async function fetchRadarFrames() {
+  if (Date.now() - radarCache.ts < 5 * 60 * 1000 && radarCache.data) return radarCache.data;
+  try {
+    const meta = await got('https://api.rainviewer.com/public/weather-maps.json', 12000);
+    const past = (meta.radar && meta.radar.past || []).slice(-4);
+    const nowcast = (meta.radar && meta.radar.nowcast || []).slice(0, 2);
+    radarCache = { ts: Date.now(), data: { host: meta.host || 'https://tilecache.rainviewer.com', past, nowcast } };
+    return radarCache.data;
+  } catch (e) {
+    radarCache = { ts: Date.now(), data: null };
+    return null;
+  }
+}
+
+/* ---------------- 多城市轻量实况（分享/关注列表用） ---------------- */
+async function fetchCityCurrent(lat, lon) {
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&current=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=1`;
+  return got(u, 12000);
+}
+
+/* ---------------- 分享卡片存图 ---------------- */
+async function savePng(dataURL) {
+  const { dialog } = require('electron');
+  const m = /^data:image\/png;base64,(.+)$/.exec(String(dataURL || ''));
+  if (!m) return null;
+  const r = await dialog.showSaveDialog(win, {
+    title: '保存天气卡片', defaultPath: `天气卡片-${new Date().toISOString().slice(0, 10)}.png`,
+    filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+  });
+  if (r.canceled || !r.filePath) return null;
+  fs.writeFileSync(r.filePath, Buffer.from(m[1], 'base64'));
+  return r.filePath;
 }
 
 /* ---------------- 顶部吸附温度小窗 ----------------
@@ -238,9 +298,12 @@ function checkSnap() {
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings);
   // 设置写入白名单：渲染层只允许改这几个键（防任意键注入/原型污染/updateUrl 被劫持到恶意更新源）
-  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules', 'modulesOrder']);
-  const MODULE_KEYS = new Set(['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac']);
-  const MODULE_ORDER = new Set(['globe', 'hourly', 'daily', 'duo', 'almanac']);
+  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules', 'modulesOrder', 'cities', 'alerts']);
+  const MODULE_KEYS = new Set(['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac',
+    'uv', 'pollen', 'wind', 'visib', 'dress', 'carwash', 'dry', 'cold',
+    'moon', 'history', 'precipstat', 'pressure', 'cities', 'radar', 'alerts', 'share']);
+  const MODULE_ORDER = new Set(['globe', 'hourly', 'daily', 'duo', 'real', 'life4', 'climate', 'play', 'almanac']);
+  const DEFAULT_ORDER = ['globe', 'hourly', 'daily', 'duo', 'real', 'life4', 'climate', 'play', 'almanac'];
   ipcMain.handle('settings:update', (_e, patch) => {
     const safe = {};
     if (patch && typeof patch === 'object') {
@@ -276,8 +339,31 @@ function registerIpc() {
               const s = String(item);
               if (MODULE_ORDER.has(s) && !seen.has(s)) { seen.add(s); arr.push(s); }
             }
-            for (const s of ['globe', 'hourly', 'daily', 'duo', 'almanac']) if (!seen.has(s)) arr.push(s);
+            for (const s of DEFAULT_ORDER) if (!seen.has(s)) arr.push(s);
             safe.modulesOrder = arr;
+          }
+        } else if (k === 'cities') {
+          // 多城市关注：数组白名单（每项只收合法字段，上限 12 个）
+          if (Array.isArray(v)) {
+            safe.cities = v.slice(0, 12).map((c, i) => ({
+              id: String(c && c.id || 'c' + i).slice(0, 40),
+              name: String(c && c.name || '').slice(0, 40),
+              lat: Number(c && c.lat), lon: Number(c && c.lon),
+              parent: String(c && c.parent || '').slice(0, 60)
+            })).filter(c => c.name && Number.isFinite(c.lat) && Number.isFinite(c.lon));
+          }
+        } else if (k === 'alerts') {
+          // 自定义提醒规则：数组白名单（type 枚举 + 阈值数值化，上限 24 条）
+          const TYPES = new Set(['rain', 'tempAbove', 'tempBelow', 'uv', 'wind', 'cold']);
+          if (Array.isArray(v)) {
+            safe.alerts = v.slice(0, 24).map((a2, i) => ({
+              id: String(a2 && a2.id || 'a' + i).slice(0, 40),
+              type: TYPES.has(a2 && a2.type) ? a2.type : 'rain',
+              threshold: Number(a2 && a2.threshold),
+              lead: Number(a2 && a2.lead) || 0,
+              enabled: a2 ? a2.enabled !== false : true,
+              label: String(a2 && a2.label || '').slice(0, 60)
+            }));
           }
         } else if (typeof v === 'boolean' || k === 'unit' || k === 'autoLocate') {
           safe[k] = v;
@@ -326,6 +412,17 @@ function registerIpc() {
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve({ error: '坐标无效' });
     return fetchWeather(p.lat, p.lon).catch(err => ({ error: String(err.message || err) }));
   });
+
+  ipcMain.handle('weather:archive', (_e, p) => {
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve(null);
+    return fetchArchive(p.lat, p.lon).catch(() => null); // 历史气候失败不拖垮主流程
+  });
+  ipcMain.handle('radar:frames', () => fetchRadarFrames());
+  ipcMain.handle('city:current', (_e, p) => {
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve(null);
+    return fetchCityCurrent(p.lat, p.lon).catch(() => null);
+  });
+  ipcMain.handle('png:save', (_e, dataURL) => savePng(dataURL).catch(() => null));
 
   ipcMain.handle('geo:search', async (_e, q) => {
     // 双源兜底：Nominatim 故障/无结果 → Open-Meteo 地理编码；网络层故障 got() 自动重试
@@ -543,6 +640,13 @@ function createWindow() {
           console.log('[shot]', name, 'scrollTop=', real);
           await shoot(name);
         }
+        // 四联扩展卡取景（跟元素定位自适应）：real/life4 一帧、climate/play 一帧，目检 16 卡渲染
+        for (const [name, anchor] of [['shot-q1-quads.png', 'modQuadReal'], ['shot-q2-quads.png', 'modQuadClimate']]) {
+          await win.webContents.executeJavaScript(`(() => { const w = document.getElementById("widget"), t = document.getElementById("${anchor}"); w.scrollTop += t.getBoundingClientRect().top - w.getBoundingClientRect().top - 16; })()`);
+          await new Promise(r => setTimeout(r, 700));
+          await shoot(name);
+        }
+        await win.webContents.executeJavaScript('document.getElementById("widget").scrollTop = 0');
         await win.webContents.executeJavaScript('document.getElementById("btnSettings").click()');
         await new Promise(r => setTimeout(r, 900));
         await shoot('shot-5.png');

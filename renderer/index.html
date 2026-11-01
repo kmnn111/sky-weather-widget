@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self'" />
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com; script-src 'self'" />
   <title>云上晴雨</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -116,6 +116,87 @@
       </div>
     </section>
 
+    <!-- ======== 扩展模块：实时增强 / 生活指数 / 日月气候 / 玩法效率（各自四联组，可整体排序、组内单控） ======== -->
+    <section class="quad" id="modQuadReal">
+      <div class="card xcard x-uv" id="modUv">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">紫外线防护</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-pollen" id="modPollen">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">花粉过敏</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-wind" id="modWind">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">风力风向罗盘</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-visib" id="modVisib">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">能见度雾况</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+    </section>
+
+    <section class="quad" id="modQuadLife4">
+      <div class="card xcard x-dress" id="modDress">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">穿衣指数</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-carwash" id="modCarwash">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">洗车指数</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-dry" id="modDry">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">晾晒指数</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-cold" id="modCold">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">感冒指数</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+    </section>
+
+    <section class="quad" id="modQuadClimate">
+      <div class="card xcard x-moon" id="modMoon">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">月相与日出日落</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-history" id="modHistory">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">历史今天对比</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-precipstat" id="modPrecipstat">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">周月降水统计</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-pressure" id="modPressure">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">气压趋势</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+    </section>
+
+    <section class="quad" id="modQuadPlay">
+      <div class="card xcard x-cities" id="modCities">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">多城市关注</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-radar" id="modRadar">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">降水雷达图</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-alerts" id="modAlerts">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">自定义天气提醒</span><span class="x-badge-slot"></span></div>
+        <div class="x-body"></div>
+      </div>
+      <div class="card xcard x-share" id="modShare">
+        <div class="x-head"><span class="x-ico"></span><span class="x-title">天气卡片分享</span><span class="x-badge-slot"></span></div>
+        <div class="x-body">
+          <img id="sharePreview" class="x-share-prev" alt="天气卡片预览" />
+          <canvas id="shareCanvas" hidden></canvas>
+          <button class="pill-btn sm wide" id="btnSaveShare">保存天气卡片</button>
+        </div>
+      </div>
+    </section>
+
     <!-- 万年历 -->
     <section class="card almanac" id="modAlmanac">
       <div class="alm-head">
@@ -219,6 +300,46 @@
             <label class="mini"><input type="checkbox" id="chkModLife" title="显示生活指南" />生活</label>
           </span>
         </div>
+        <div class="mod-row" data-mod="real">
+          <span class="mod-handle" title="拖动排序（实时增强四卡同排，一起移动）"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">实时增强 · UV/花粉/风力/能见度</span>
+          <span class="mod-duo">
+            <label class="mini"><input type="checkbox" id="chkModUv" title="紫外线防护" />UV</label>
+            <label class="mini"><input type="checkbox" id="chkModPollen" title="花粉过敏" />花粉</label>
+            <label class="mini"><input type="checkbox" id="chkModWind" title="风力风向罗盘" />风力</label>
+            <label class="mini"><input type="checkbox" id="chkModVisib" title="能见度雾况" />能见</label>
+          </span>
+        </div>
+        <div class="mod-row" data-mod="life4">
+          <span class="mod-handle" title="拖动排序（生活指数四卡同排，一起移动）"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">生活指数 · 穿衣/洗车/晾晒/感冒</span>
+          <span class="mod-duo">
+            <label class="mini"><input type="checkbox" id="chkModDress" title="穿衣指数" />穿衣</label>
+            <label class="mini"><input type="checkbox" id="chkModCarwash" title="洗车指数" />洗车</label>
+            <label class="mini"><input type="checkbox" id="chkModDry" title="晾晒指数" />晾晒</label>
+            <label class="mini"><input type="checkbox" id="chkModCold" title="感冒指数" />感冒</label>
+          </span>
+        </div>
+        <div class="mod-row" data-mod="climate">
+          <span class="mod-handle" title="拖动排序（日月气候四卡同排，一起移动）"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">日月气候 · 月相/历史/降水/气压</span>
+          <span class="mod-duo">
+            <label class="mini"><input type="checkbox" id="chkModMoon" title="月相与日出日落" />月相</label>
+            <label class="mini"><input type="checkbox" id="chkModHistory" title="历史今天对比" />历史</label>
+            <label class="mini"><input type="checkbox" id="chkModPrecipstat" title="周月降水统计" />降水</label>
+            <label class="mini"><input type="checkbox" id="chkModPressure" title="气压趋势" />气压</label>
+          </span>
+        </div>
+        <div class="mod-row" data-mod="play">
+          <span class="mod-handle" title="拖动排序（玩法效率四卡同排，一起移动）"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
+          <span class="mod-name">玩法效率 · 城市/雷达/提醒/分享</span>
+          <span class="mod-duo">
+            <label class="mini"><input type="checkbox" id="chkModCities" title="多城市关注" />城市</label>
+            <label class="mini"><input type="checkbox" id="chkModRadar" title="降水雷达图" />雷达</label>
+            <label class="mini"><input type="checkbox" id="chkModAlerts" title="自定义天气提醒" />提醒</label>
+            <label class="mini"><input type="checkbox" id="chkModShare" title="天气卡片分享" />分享</label>
+          </span>
+        </div>
         <div class="mod-row" data-mod="almanac">
           <span class="mod-handle" title="拖动排序"><svg width="12" height="12" aria-hidden="true"><rect y="1" width="12" height="2" rx="1"/><rect y="5" width="12" height="2" rx="1"/><rect y="9" width="12" height="2" rx="1"/></svg></span>
           <span class="mod-name">万年历</span>
@@ -253,6 +374,7 @@
   <script src="lunar.js"></script>
   <script src="fx.js"></script>
   <script src="globe.js"></script>
+  <script src="extra.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
