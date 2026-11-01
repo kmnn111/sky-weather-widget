@@ -1112,12 +1112,12 @@
      拖动后紧随的 click 会被吞掉，避免误触；拖动中禁文本/图片原生拖拽。 */
   function initDragScroll(el) {
     if (!el) return;
-    let down = false, startX = 0, startLeft = 0, lastX = 0, lastT = 0, vel = 0, raf = 0, moved = false;
+    let down = false, startX = 0, startY = 0, startLeft = 0, lastX = 0, lastT = 0, vel = 0, raf = 0, moved = false;
 
     el.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
       down = true; moved = false;
-      startX = lastX = e.clientX; startLeft = el.scrollLeft;
+      startX = lastX = e.clientX; startY = e.clientY; startLeft = el.scrollLeft;
       lastT = performance.now(); vel = 0;
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       el.classList.add('dragging');
@@ -1126,6 +1126,7 @@
       if (!down) return;
       e.preventDefault();
       const dx = e.clientX - startX;
+      if (Math.abs(e.clientY - startY) > Math.abs(dx)) return; // 竖拖为主：让位给页面纵向拖拽滚屏
       if (Math.abs(dx) > 3) moved = true;
       el.scrollLeft = startLeft - dx;
       const now = performance.now(), dt = now - lastT;
@@ -1141,8 +1142,8 @@
         el.addEventListener('click', kill, { capture: true, once: true });
         setTimeout(() => el.removeEventListener('click', kill, true), 400);
       }
-      // 惯性滑行：按松手速度指数衰减（px/ms → 每帧位移）
-      if (Math.abs(vel) > 0.12) {
+      // 惯性滑行：按松手速度指数衰减（px/ms → 每帧位移）；停顿后松手不给陈旧速度的甩尾
+      if (Math.abs(vel) > 0.12 && performance.now() - lastT < 80) {
         const step = () => {
           vel *= 0.94;
           el.scrollLeft -= vel * 16;
@@ -1153,7 +1154,74 @@
         raf = requestAnimationFrame(step);
       }
     });
+    window.addEventListener('blur', () => { // 失焦兜底：拖动中切窗口松手不卡在拖动态
+      if (!down) return;
+      down = false;
+      el.classList.remove('dragging');
+    });
     el.addEventListener('dragstart', e => e.preventDefault()); // 内容不触发原生拖拽
+  }
+
+  /* ================= 鼠标纵向拖拽滚屏（滚动条隐藏后的沉浸式上下滚动） =================
+     按住内容上下拖 = 内容 1:1 跟手，松手按速度惯性滑行一小段；
+     方向锁：起步后判定主轴——横拖归横滑列表平移、竖拖归页面滚动，互不打架；
+     .drag（拖窗体）、地球/进度条、表单控件、排序手柄等交互区豁免不启动。 */
+  function initDragScrollY(el) {
+    if (!el) return;
+    let down = false, axis = '', startX = 0, startY = 0, startTop = 0, lastY = 0, lastT = 0, vel = 0, raf = 0, moved = false;
+    const stopInertia = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      const t = e.target;
+      if (t.closest && t.closest('.drag, .mod-handle, #globeMount, #gBarWrap, input, textarea, select, button, a, label')) return;
+      down = true; axis = ''; moved = false;
+      startX = e.clientX; startY = lastY = e.clientY; startTop = el.scrollTop;
+      lastT = performance.now(); vel = 0;
+      stopInertia();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!down) return;
+      const dy = e.clientY - startY, dx = e.clientX - startX;
+      if (!axis) {
+        if (Math.abs(dy) < 5 && Math.abs(dx) < 5) return;
+        axis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+      }
+      if (axis !== 'y') return;
+      e.preventDefault();
+      if (Math.abs(dy) > 3) moved = true;
+      el.scrollTop = startTop - dy; // 往下拖 = 内容跟手往下走
+      const now = performance.now(), dt = now - lastT;
+      if (dt > 0) { vel = (e.clientY - lastY) / dt; lastY = e.clientY; lastT = now; }
+      markScrolling(el);
+    });
+    const end = () => {
+      if (!down) return;
+      down = false;
+      if (moved) {
+        // 拖动结束吞掉一次 click，避免松手处的项目被误点
+        const kill = ev => { ev.stopPropagation(); ev.preventDefault(); };
+        el.addEventListener('click', kill, { capture: true, once: true });
+        setTimeout(() => el.removeEventListener('click', kill, true), 400);
+      }
+      // 惯性滑行：按松手速度指数衰减（px/ms → 每帧位移），与横滑列表同手感；
+      // 停顿后松手不给陈旧速度的甩尾
+      if (axis === 'y' && Math.abs(vel) > 0.12 && performance.now() - lastT < 80) {
+        const step = () => {
+          vel *= 0.94;
+          el.scrollTop -= vel * 16;
+          markScrolling(el);
+          const edge = el.scrollTop <= 0 || el.scrollTop >= el.scrollHeight - el.clientHeight - 1;
+          if (Math.abs(vel) > 0.02 && !edge) raf = requestAnimationFrame(step);
+          else raf = 0;
+        };
+        raf = requestAnimationFrame(step);
+      }
+    };
+    window.addEventListener('mouseup', end);
+    window.addEventListener('blur', end);      // 失焦兜底，防止拖拽状态卡住
+    el.addEventListener('wheel', stopInertia, { passive: true }); // 滚轮接管即停拖拽惯性，防两套滚动打架
+    el.addEventListener('dragstart', e => e.preventDefault());   // 内容不触发原生拖拽
   }
 
   /* ================= 窗口 JS 手动拖拽兜底 =================
@@ -1270,6 +1338,8 @@
     initSmoothScroll(document.querySelector('.panel-body'));
     initDragScroll($('hourlyScroll'));
     initDragScroll($('almHours'));
+    initDragScrollY($('widget'));
+    initDragScrollY(document.querySelector('.panel-body'));
 
     // 昼夜地球（地点确定后初始化，数据回来后 renderAll 里持续更新）
     if (window.Globe) { Globe.init('globeMount'); Globe.update(state.loc); }

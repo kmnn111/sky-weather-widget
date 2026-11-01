@@ -106,7 +106,8 @@ let dockTimer = null;
 let programmatic = 0;                 // 程序改 bounds 的时间戳，抑制吸附/位置记忆
 let hoverPoll = null;
 let hoverArmed = true;                // "离开再进入"才展开，避免刚放下小窗就弹开
-let baseSize = { w: 480, h: 920 };    // 窗口基准尺寸（启动时从设置读入并校验；窗口固定尺寸，任何异常改写都纠回它）
+const DESIGN_W = 480, DESIGN_H = 920; // 窗口设计尺寸（固定，resizable:false）：一切几何纠偏的唯一锚点
+let baseSize = { w: DESIGN_W, h: DESIGN_H }; // 基准尺寸 = 设计常量（落盘 winSize 只当回执，绝不当基准）
 
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 function setBoundsSafe(r) {
@@ -430,17 +431,22 @@ function applyAutoLaunch(on) {
 }
 
 /* ---------------- 窗口 ---------------- */
+/* 尺寸采纳：基准=设计常量。落盘 winSize 只当「回执」不当「基准」——旧版的宽范围校验
+   （380-1280x560-2200）会放过 900x920 这类坏值（旧版拖拽拉伸固化进 settings.json），
+   被采纳成 baseSize 后 saveGeom/setShape/自愈全部「纠回」坏尺寸；卸载不清 userData，
+   重装也救不回（2026-11-01 用户实报）。任何非设计值一律采纳设计尺寸并清写落盘，
+   老机器升级启动即痊愈。 */
+function adoptWinSize() {
+  const s = settings.winSize;
+  if (!s || Math.round(s.w) !== DESIGN_W || Math.round(s.h) !== DESIGN_H) {
+    persist({ winSize: { w: DESIGN_W, h: DESIGN_H } }); // 清洗历史坏数据
+  }
+  return { w: DESIGN_W, h: DESIGN_H };
+}
 function createWindow() {
   const wa = screen.getPrimaryDisplay().workArea;
-  // 校验持久化尺寸：窗口设计为固定尺寸（resizable:false），任何越界值都是
-  // 历史坏数据（系统/DPI/吸附异常改写后被存下），回退默认并纠正落盘，防启动即"超宽窗"
-  let size = settings.winSize;
-  if (!size || !Number.isFinite(size.w) || !Number.isFinite(size.h) ||
-    size.w < 380 || size.w > 1280 || size.h < 560 || size.h > 2200) {
-    size = { w: 480, h: 920 };
-    persist({ winSize: { w: size.w, h: size.h } });
-  }
-  baseSize = { w: Math.round(size.w), h: Math.round(size.h) };
+  const size = adoptWinSize();
+  baseSize = size;
   const startDocked = !!settings.docked && settings.edgeDock !== false;
   let x, y;
   if (startDocked) {
@@ -451,6 +457,12 @@ function createWindow() {
     x = clamp(x, wa.x, wa.x + wa.width - size.w);
   } else if (settings.winPos && Number.isFinite(settings.winPos.x)) { x = settings.winPos.x; y = settings.winPos.y; }
   else { x = wa.x + wa.width - size.w - 36; y = wa.y + wa.height - size.h - 24; }
+  // 位置自愈：落盘位置已完全离开所有屏幕（拔显示器/换分辨率残留的坏数据）→ 回退默认位
+  const onScreen = screen.getAllDisplays().some(d => {
+    const a = d.workArea;
+    return x < a.x + a.width && x + size.w > a.x && y < a.y + a.height && y + size.h > a.y;
+  });
+  if (!onScreen) { x = wa.x + wa.width - size.w - 36; y = wa.y + wa.height - size.h - 24; }
 
   win = new BrowserWindow({
     x: Math.round(x), y: Math.round(y),
@@ -546,6 +558,19 @@ function createWindow() {
           return { before, after: el.scrollLeft, max: el.scrollWidth - el.clientWidth };
         })()`);
         console.log('[drag-test]', JSON.stringify(dragRes), dragRes.after > dragRes.before ? 'PASS' : 'FAIL');
+        // 纵向拖拽滚屏自检（v1.0.20 沉浸式滚动）：竖拖内容跟手 + 侧边滑块已隐藏
+        const dragY = await win.webContents.executeJavaScript(`(() => {
+          const w = document.getElementById('widget');
+          w.scrollTop = 0;
+          const opt = (y) => ({ bubbles: true, cancelable: true, clientX: 200, clientY: y, button: 0 });
+          w.dispatchEvent(new MouseEvent('mousedown', opt(500)));
+          window.dispatchEvent(new MouseEvent('mousemove', opt(400)));
+          window.dispatchEvent(new MouseEvent('mousemove', opt(300)));
+          window.dispatchEvent(new MouseEvent('mouseup', opt(300)));
+          return { top: w.scrollTop, sb: getComputedStyle(w).scrollbarWidth };
+        })()`);
+        const dragYOk = dragY.top > 100 && dragY.sb === 'none';
+        console.log('[dragY-test] vertical-drag + hidden-scrollbar', JSON.stringify(dragY), dragYOk ? 'PASS' : 'FAIL');
         // ---- v1.0.15 新增自检：夜色主题 / IME 搜索守卫 / 设置页更新按钮 ----
         // 夜色主题：白天跑 --shot 也能验证夜间版式（强制 body.night 抓帧后还原）
         await win.webContents.executeJavaScript('document.body.classList.add("night")');
@@ -653,8 +678,18 @@ function createWindow() {
         win.setBounds({ x: b0.x, y: b0.y, width: 1600, height: 900 }); // 模拟 DPI/吸附异常改写
         await new Promise(r => setTimeout(r, 1300));
         const b1 = win.getBounds();
-        const healOk = b1.width === baseSize.w && b1.height === baseSize.h;
+        // 对照设计常量而非 baseSize：baseSize 本身若被坏数据带偏，跟它比会假绿
+        const healOk = b1.width === DESIGN_W && b1.height === DESIGN_H;
         console.log('[size-test] rogue-resize self-heal', JSON.stringify({ base: baseSize, after: { w: b1.width, h: b1.height } }), healOk ? 'PASS' : 'FAIL');
+        // ---- v1.0.20 自检：坏落盘尺寸清洗（旧版拉伸尺寸固化进 winSize、重装不恢复的实报 bug）----
+        // 毒化 winSize 后走采纳逻辑：必须回设计尺寸并清写落盘
+        persist({ winSize: { w: 900, h: 920 } });
+        const adopted = adoptWinSize();
+        const purgeOk = adopted.w === DESIGN_W && adopted.h === DESIGN_H &&
+          settings.winSize.w === DESIGN_W && settings.winSize.h === DESIGN_H;
+        console.log('[size-test] poisoned-winSize purge', JSON.stringify({ adopted, disk: settings.winSize }), purgeOk ? 'PASS' : 'FAIL');
+        const anchorOk = baseSize.w === DESIGN_W && baseSize.h === DESIGN_H;
+        console.log('[size-test] base-anchor', JSON.stringify(baseSize), anchorOk ? 'PASS' : 'FAIL');
         // ---- v1.0.17 自检：settings:update 白名单（合法键放行 / 注入键与非法 updateUrl 拒收） ----
         const wl = JSON.parse(await win.webContents.executeJavaScript(`(async () => {
           const r1 = await sky.updateSettings({ refreshMinutes: 10, hacked: 'x', updateUrl: 'javascript:alert(1)' });

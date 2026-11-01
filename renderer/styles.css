@@ -264,8 +264,16 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
   padding: 11px 11px 16px;
   display: flex; flex-direction: column; gap: 11px;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable; /* 滚动条占位固定，滚动中不左右跳 */
 }
+/* 沉浸式：纵向滚动条隐藏（滚轮 / 按住拖拽上下均可滚屏，2026-11-01 用户指定去掉侧边滑块）；
+   原 scrollbar-gutter 占位一并取消，内容拿回 7px 宽度 */
+#widget, .panel-body { scrollbar-width: none; -ms-overflow-style: none; }
+#widget::-webkit-scrollbar, .panel-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* 拖拽滚屏抓手光标；交互控件 / 地球 / 排序手柄等豁免区还原默认 */
+#widget, .panel-body { cursor: grab; }
+#widget.dragging, .panel-body.dragging { cursor: grabbing; }
+#widget :is(input, textarea, select, button, a, label, canvas, .mod-handle, #globeMount, #gBarWrap),
+.panel-body :is(input, textarea, select, button, a, label, canvas, .mod-handle, #globeMount, #gBarWrap) { cursor: auto; }
 .card {
   background: rgba(255, 255, 255, 0.55);
   /* 28px 模糊在透明窗上滚动时开销很大；16px 视觉接近，滚动明显更顺 */
