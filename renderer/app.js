@@ -462,6 +462,20 @@
     moon: 'modMoon', history: 'modHistory', precipstat: 'modPrecipstat', pressure: 'modPressure',
     cities: 'modCities', radar: 'modRadar', alerts: 'modAlerts', share: 'modShare'
   };
+  /* 动效模式统一开关：body.motion-quiet 时 CSS 动画全部静止（.motion-quiet 规则块）。
+     on=始终播放（默认；无视系统「减少动画」——组件动效是核心体验），
+     system=跟随系统 reduce-motion，off=一律静止。 */
+  function applyMotion() {
+    const mode = (state.settings && state.settings.motion) || 'on';
+    const sysReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.body.classList.toggle('motion-quiet', mode === 'off' || (mode === 'system' && !!sysReduce));
+  }
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => { if (((state.settings && state.settings.motion) || 'on') === 'system') applyMotion(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
   function applyModules() {
     const m = (state.settings && state.settings.modules) || {};
     for (const k of MOD_KEYS) {
@@ -982,6 +996,11 @@
     $('chkBrief').addEventListener('change', async e => {
       state.settings = await sky.updateSettings({ brief: e.target.checked });
     });
+    // 动效模式：on=始终播放（默认，无视系统「减少动画」）/ system=跟随系统 / off=静止
+    $('motionSelect').addEventListener('change', async e => {
+      state.settings = await sky.updateSettings({ motion: e.target.value });
+      applyMotion();
+    });
     // 显示模块开关：隐藏即 display:none（长模块可关，论坛反馈采纳），默认全部显示
     for (const k of MOD_KEYS) {
       const chk = $('chkMod' + k.charAt(0).toUpperCase() + k.slice(1));
@@ -1140,6 +1159,10 @@
 
     el.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
+      // 点在滚动条（thumb/轨道）区：放行原生拖拽，别劫持（内容拖拽公式会把 thumb 拖反向）
+      const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      const bl = parseFloat(cs.borderLeftWidth) || 0, bt = parseFloat(cs.borderTopWidth) || 0;
+      if (e.clientX - r.left - bl >= el.clientWidth || e.clientY - r.top - bt >= el.clientHeight) return;
       down = true; moved = false;
       startX = lastX = e.clientX; startY = e.clientY; startLeft = el.scrollLeft;
       lastT = performance.now(); vel = 0;
@@ -1197,6 +1220,10 @@
 
     el.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
+      // 点在滚动条区：放行原生 thumb 拖拽
+      const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      const bl = parseFloat(cs.borderLeftWidth) || 0, bt = parseFloat(cs.borderTopWidth) || 0;
+      if (e.clientX - r.left - bl >= el.clientWidth || e.clientY - r.top - bt >= el.clientHeight) return;
       const t = e.target;
       if (t.closest && t.closest('.drag, .mod-handle, #globeMount, #gBarWrap, input, textarea, select, button, a, label')) return;
       down = true; axis = ''; moved = false;
@@ -1289,6 +1316,8 @@
     $('chkAuto').checked = !!state.settings.autoLaunch;
     $('chkEdgeDock').checked = state.settings.edgeDock !== false;
     $('chkTrayTemp').checked = state.settings.trayTemp !== false;
+    $('motionSelect').value = (state.settings.motion === 'system' || state.settings.motion === 'off') ? state.settings.motion : 'on';
+    applyMotion();
     $('chkBrief').checked = state.settings.brief !== false;
     for (const k of MOD_KEYS) {
       const chk = $('chkMod' + k.charAt(0).toUpperCase() + k.slice(1));

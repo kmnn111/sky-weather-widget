@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('sky', {
   winAction: (act, arg) => ipcRenderer.invoke('win:action', act, arg),
   winDrag: (sx, sy) => ipcRenderer.send('win:drag', sx, sy),
   winDragEnd: () => ipcRenderer.send('win:drag-end'),
+  openExternal: (url) => ipcRenderer.invoke('ext:open', url),
   version: () => ipcRenderer.invoke('app:version'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateDownload: () => ipcRenderer.invoke('update:download'),

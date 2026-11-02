@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com; script-src 'self'" />
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com https://*.is.autonavi.com; script-src 'self'" />
   <title>云上晴雨</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -274,6 +274,13 @@
       <h4>提醒与托盘</h4>
       <label class="check"><input type="checkbox" id="chkTrayTemp" /> 托盘图标显示实时温度</label>
       <label class="check"><input type="checkbox" id="chkBrief" /> 天气早晚报（每天 8:00 / 20:00 通知播报）</label>
+
+      <h4>动效</h4>
+      <select id="motionSelect" class="select">
+        <option value="on">开启（推荐，卡片动画始终播放）</option>
+        <option value="system">跟随系统（系统关闭动画则静止）</option>
+        <option value="off">关闭（全部静止）</option>
+      </select>
 
       <h4>显示模块</h4>
       <div class="mod-sort" id="modSort">

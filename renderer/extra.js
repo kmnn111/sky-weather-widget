@@ -1,6 +1,6 @@
 /* extra.js — 16 个扩展模块：实时增强(UV/花粉/风力/能见度) · 生活指数(穿衣/洗车/晾晒/感冒)
    日月气候(月相/历史对比/降水统计/气压) · 玩法效率(多城市/雷达/提醒/分享卡)
-   性能约定：动效只走 transform/opacity（合成层），prefers-reduced-motion 全静止，
+   性能约定：动效只走 transform/opacity（合成层），「动效」设置（body.motion-quiet）全静止，
    离屏由 content-visibility:auto 跳过绘制；数据渲染为纯 innerHTML 替换，无定时重排。 */
 (function () {
   'use strict';
@@ -141,6 +141,12 @@
   const segBar = (seg, n, cls) => `<div class="x-segs ${cls || ''}">` +
     Array.from({ length: n }, (_, i) => `<i class="${i < seg ? 'on s' + (i + 1) : ''}"></i>`).join('') + '</div>';
   const badge = (txt, tone) => tone === '' ? `<span class="x-badge">${esc(txt)}</span>` : `<span class="x-badge ${tone}">${esc(txt)}</span>`;
+  // 动效强度分级：给卡片根元素挂 lv1-lv5（CSS 据此调动画速度/浓度）
+  const setLv = (el, n) => {
+    if (!el) return;
+    el.classList.remove('lv1', 'lv2', 'lv3', 'lv4', 'lv5');
+    if (n >= 1 && n <= 5) el.classList.add('lv' + n);
+  };
 
   /* ===================== 批1：实时天气增强 ===================== */
   function renderReal(w, air) {
@@ -157,6 +163,7 @@
         segBar(u.seg, 5, 'x-uv-segs') +
         `<div class="x-adv">${esc(u.adv)}</div>`;
       uvEl.querySelector('.x-badge-slot').innerHTML = badge(u.lv, u.tone);
+      setLv(uvEl, u.seg);
     }
     // — 花粉 —
     const polEl = $('modPollen');
@@ -182,6 +189,7 @@
         `<div class="x-adv">${wl && wl.tone ? '过敏人群外出建议戴口罩' : '花粉浓度不高，可放心活动'}</div>`
       ) : '<div class="x-adv">花粉数据暂不可用</div>';
       polEl.querySelector('.x-badge-slot').innerHTML = wl ? badge(worst[0].slice(0, 2) + ' ' + wl.lv, wl.tone) : badge('数据缺失', '');
+      setLv(polEl, wl ? Math.max(1, Math.min(5, Math.ceil((wl.pct || 0) / 20))) : 0);
     }
     // — 风力罗盘 —
     const wdEl = $('modWind');
@@ -201,6 +209,7 @@
         <div class="x-sub">${dirName(deg)}风 · 阵风 ${gust.toFixed(1)} · ${bft} 级</div></div></div>` +
         `<div class="x-adv">${bft <= 3 ? '风力平稳，适合开窗通风' : bft <= 5 ? '风力适中，注意高空坠物' : '风力较强，出行注意防风'}</div>`;
       wdEl.querySelector('.x-badge-slot').innerHTML = badge(bft + ' 级', bft >= 6 ? 'warn' : '');
+      setLv(wdEl, bft >= 8 ? 5 : bft >= 6 ? 4 : bft >= 4 ? 3 : bft >= 2 ? 2 : 1);
     }
     // — 能见度 —
     const vsEl = $('modVisib');
@@ -213,6 +222,7 @@
         segBar(v.seg, 5, 'x-vis-segs') +
         `<div class="x-adv">${v.km >= 10 ? '视野开阔，正常出行' : v.km >= 4 ? '略有薄雾，驾驶注意车距' : '能见度低，减速慢行'}</div>`;
       vsEl.querySelector('.x-badge-slot').innerHTML = badge(v.lv, v.tone);
+      setLv(vsEl, Math.max(1, Math.min(5, 6 - v.seg))); // 能见度越差雾效越浓
     }
   }
 
@@ -230,6 +240,7 @@
         `<div class="x-chips">${chips.map(nm => `<i class="${nm === dr.name ? 'on' : ''}">${nm}</i>`).join('')}</div>` +
         `<div class="x-adv">${esc(dr.adv)}</div>`;
       dEl.querySelector('.x-badge-slot').innerHTML = badge(Math.round(feels) + '°', '');
+      if (!dEl.querySelector('.x-cloth')) dEl.insertAdjacentHTML('beforeend', '<div class="x-cloth" aria-hidden="true"><i></i></div>');
     }
     // 洗车
     const ws = washIndex(w);
@@ -240,6 +251,9 @@
         segBar(ws.seg, 4, 'x-wash-segs') +
         `<div class="x-adv">降水概率 ${Math.round(ws.pop)}%（未来 24h）</div>`;
       wEl.querySelector('.x-badge-slot').innerHTML = badge(ws.lv, ws.tone);
+      // 语义动效：适宜洗车（tone 空）→晴天星闪；不宜/不太适宜→雨珠滚落
+      wEl.classList.toggle('sunny', !ws.tone);
+      if (!wEl.querySelector('.x-drops')) wEl.insertAdjacentHTML('beforeend', '<div class="x-drops" aria-hidden="true"><i></i><i></i><i></i></div>');
     }
     // 晾晒
     const dy = dryIndex(w);
@@ -250,6 +264,7 @@
         segBar(dy.seg, 4, 'x-dry-segs') +
         `<div class="x-adv">${dy.seg >= 3 ? '衣物快干，放心晾' : dy.seg >= 2 ? '晾干偏慢，可放通风处' : '建议室内晾晒'}</div>`;
       yEl.querySelector('.x-badge-slot').innerHTML = badge(dy.lv, dy.tone);
+      if (!yEl.querySelector('.x-cloth')) yEl.insertAdjacentHTML('beforeend', '<div class="x-cloth warm" aria-hidden="true"><i></i></div>');
     }
     // 感冒
     const cd = coldIndex(w);
@@ -260,6 +275,8 @@
         segBar(cd.seg + 1, 5, 'x-cold-segs') +
         `<div class="x-adv">${cd.seg >= 2 ? '温差较大，注意增减衣物' : '感冒风险不高，正常作息'}</div>`;
       cEl.querySelector('.x-badge-slot').innerHTML = badge('风险' + cd.lv, cd.tone);
+      setLv(cEl, cd.seg + 1);
+      if (!cEl.querySelector('.x-flakes')) cEl.insertAdjacentHTML('beforeend', '<div class="x-flakes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>');
     }
   }
 
@@ -399,7 +416,7 @@
         { lv: '平稳', tone: '', txt: '气压平稳，天气维持' };
     el.querySelector('.x-badge-slot').innerHTML = badge(trend.lv, trend.tone);
     body.innerHTML =
-      `<div class="x-2col x-base"><b class="x-num">${cur.toFixed(0)}</b><span>hPa · 3h ${d3 >= 0 ? '+' : ''}${d3.toFixed(1)}</span></div>
+      `<div class="x-2col x-base"><b class="x-num">${cur.toFixed(0)}</b>${Math.abs(d3) >= 1 ? `<i class="x-arrow ${d3 > 0 ? 'up' : 'down'}" aria-hidden="true"></i>` : ''}<span>hPa · 3h ${d3 >= 0 ? '+' : ''}${d3.toFixed(1)}</span></div>
       <svg viewBox="0 0 240 56" class="x-spark" aria-hidden="true"><polygon points="${area}" class="xs-area"/><polyline points="${pts}" class="xs-line"/></svg>
       <div class="x-adv">${trend.txt}</div>`;
   }
@@ -489,7 +506,19 @@
       return;
     }
     const z = radar.z, t = tileXY(loc.lat, loc.lon, z);
+    // loc 在瓦片内的小数偏移 → 画布内精确像素：让定位点（而非瓦片中心）对准视图中心
+    const n2 = Math.pow(2, z);
+    const fx = (loc.lon + 180) / 360 * n2 - t.x;
+    const la2 = loc.lat * Math.PI / 180;
+    const fy = (1 - Math.log(Math.tan(la2) + 1 / Math.cos(la2)) / Math.PI) / 2 * n2 - t.y;
+    const px = (1 + fx) * 256, py = (1 + fy) * 256;
     const all = meta.past.concat(meta.nowcast || []);
+    // 卫星底图（高德 style=8 卫星+路网标注，合规白名单源）：3×3 瓦片铺底
+    const sub = 'webst0' + (1 + Math.floor(Math.random() * 4));
+    const base = [];
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      base.push(`<img src="https://${sub}.is.autonavi.com/appmaptile?style=8&x=${t.x + dx}&y=${t.y + dy}&z=${z}" alt="" class="x-rtile" style="left:${(dx + 1) * 256}px;top:${(dy + 1) * 256}px">`);
+    }
     const layers = all.map((f, i) => {
       const tiles = [];
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
@@ -500,20 +529,24 @@
     const lastTime = new Date((meta.past[meta.past.length - 1].time || 0) * 1000);
     const hh = String(lastTime.getHours()).padStart(2, '0'), mm2 = String(lastTime.getMinutes()).padStart(2, '0');
     body.innerHTML =
-      `<div class="x-radar-view"><div class="x-radar-move">${layers}</div>
+      `<div class="x-radar-view"><div class="x-radar-move" style="margin:${-py}px 0 0 ${-px}px"><div class="x-rlayer x-rbase">${base.join('')}</div>${layers}</div>
         <i class="x-radar-ring r1"></i><i class="x-radar-ring r2"></i><i class="x-radar-ring r3"></i>
-        <i class="x-radar-me"></i></div>
-      <div class="x-adv">回波帧 ${hh}:${mm2} · ${all.length} 帧循环（含外推）</div>`;
-    const layerEls = [...body.querySelectorAll('.x-rlayer')];
+        <i class="x-radar-sweep"></i>
+        <i class="x-radar-me"></i><div class="x-attr">© 高德地图 · RainViewer</div></div>
+      <div class="x-adv">回波帧 ${hh}:${mm2} · ${all.length} 帧循环（10 分钟/帧，含外推）</div>`;
+    const layerEls = [...body.querySelectorAll('.x-rlayer:not(.x-rbase)')];
     layerEls.forEach((l, i) => { l.style.opacity = i === layerEls.length - 1 ? 1 : 0; });
     radar.idx = layerEls.length - 1;
-    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // 静止判定与「动效」设置对齐（body.motion-quiet 由 applyMotion 统一驱动，含系统 reduce → system 模式）
+    const reduce = document.body.classList.contains('motion-quiet');
     if (!reduce && layerEls.length > 1) {
       radar.timer = setInterval(() => {
+        // tick 级守卫：运行中切到静止档立即停帧（不清 timer，切回即恢复）
+        if (document.body.classList.contains('motion-quiet')) return;
         layerEls[radar.idx].style.opacity = 0;
         radar.idx = (radar.idx + 1) % layerEls.length;
         layerEls[radar.idx].style.opacity = 1;
-      }, 900);
+      }, 800); // 与 .x-rlayer 的 .6s opacity 过渡配合：帧间交叉淡化，雨云移动肉眼可辨
     }
   }
   // — 自定义提醒（规则引擎：模板内置，每条 6h 冷却防轰炸） —
@@ -709,6 +742,7 @@
   function renderAll(data, settings, loc) {
     window.__extraWeather = data && data.weather;
     window.__extraSettings = settings;
+    curLoc = loc || null; // 点击跳转的坐标源（切换城市后自动跟随）
     if (!data || !data.weather) return;
     renderReal(data.weather, data.air);
     renderLife4(data.weather);
@@ -728,6 +762,50 @@
     if (on('cities')) refreshCities();
   }
 
+  /* ===================== 数据卡点击 → 网页详情 =====================
+     整卡可点（↗ 角标提示），跳系统默认浏览器看具体情况；
+     拖拽滚屏结束后自带「吞一次 click」，拖动浏览不会误触。 */
+  let curLoc = null; // renderAll 传入的定位，点击时取最新
+  const coord = n => Number(n).toFixed(4); // Windy 要求坐标必须带小数部分（50 须写 50.0）
+  const windyUrl = (overlay, l) => `https://www.windy.com/?${overlay},${coord(l.lat)},${coord(l.lon)},8,d:picker`;
+  const EXT_LINKS = {
+    modUv: l => windyUrl('uvindex', l),        // 紫外线 → Windy UV 指数图层
+    modWind: l => windyUrl('wind', l),         // 风力罗盘 → 风图层
+    modVisib: l => windyUrl('visibility', l),  // 能见度 → 能见度图层
+    modDress: l => windyUrl('temp', l),        // 穿衣 → 温度图层
+    modCarwash: l => windyUrl('rain', l),      // 洗车 → 降水图层
+    modDry: l => windyUrl('rh', l),            // 晾晒 → 湿度图层
+    modCold: l => windyUrl('temp', l),         // 感冒 → 温度图层
+    modPrecipstat: l => windyUrl('rain', l),   // 降水统计 → 降水图层
+    modPressure: l => windyUrl('pressure', l), // 气压 → 气压图层
+    modMoon: l => `https://www.timeanddate.com/moon/@${coord(l.lat)},${coord(l.lon)}`, // 月相
+    modRadar: l => `https://www.rainviewer.com/?loc=${coord(l.lat)},${coord(l.lon)},8`  // 雷达
+  };
+  function initExtLinks() {
+    for (const id of Object.keys(EXT_LINKS)) {
+      const card = $(id);
+      if (!card || card.hasAttribute('data-ext')) continue;
+      card.setAttribute('data-ext', '1');
+      const head = card.querySelector('.x-head');
+      if (head && !head.querySelector('.x-ext')) head.insertAdjacentHTML('beforeend', '<span class="x-ext" title="点击查看网页详情">↗</span>');
+    }
+  }
+  let lastOpen = 0;
+  document.addEventListener('click', e => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const card = t.closest('.xcard[data-ext]');
+    if (!card) return;
+    // 交互控件/排序手柄上的点击是操作，不跳转（拖后那次 click 已被滚屏 kill 拦掉，到不了这里）
+    if (t.closest('a, button, input, textarea, select, label, .x-switch, .mod-handle, [data-cid], [data-addcity], [data-alert], [data-alertadd]')) return;
+    const build = EXT_LINKS[card.id];
+    if (!build || !curLoc || !Number.isFinite(curLoc.lat) || !Number.isFinite(curLoc.lon)) return;
+    const now = Date.now();
+    if (now - lastOpen < 700) return; // 双击不弹两个标签页
+    lastOpen = now;
+    try { sky.openExternal(build(curLoc)); } catch (err) { }
+  });
+
   /* —— 图标注入（一次性）：ICO 内联 SVG 填进各卡 .x-ico —— */
   (function initIcons() {
     const map = [
@@ -741,6 +819,7 @@
       if (slot && !slot.firstChild) slot.innerHTML = ICO[key];
     }
   })();
+  initExtLinks(); // 数据卡 ↗ 角标 + 点击跳转（一次性）
 
   window.Extra = {
     renderAll, renderCities, refreshCities, renderRadar, ensureRadar, ensureArchive, paintShare,

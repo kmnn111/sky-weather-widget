@@ -467,9 +467,7 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
 .sprout-stem { stroke: rgba(112, 168, 84, 0.8); stroke-width: 1; fill: none; stroke-linecap: round; }
 .sprout-leaf { fill: rgba(126, 188, 92, 0.8); }
 @keyframes sprout-sway { from { transform: rotate(-1.4deg); } to { transform: rotate(1.4deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .mm-sprout { animation: none !important; }
-}
+body.motion-quiet .mm-sprout { animation: none !important; }
 
 /* 显示模块排序列表：≡ 手柄拖动换位（手柄才启动拖动，不吞列表滚动） */
 .mod-sort { display: flex; flex-direction: column; gap: 6px; }
@@ -1312,6 +1310,23 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-badge.bad { background: rgba(217, 105, 95, 0.2); color: #b0443a; }
 .x-badge.good { background: rgba(106, 168, 79, 0.2); color: #4c7a36; }
 .x-badge.info { background: rgba(91, 143, 212, 0.18); color: #3f6a9c; }
+
+/* ---- 数据卡点击跳转：↗ 角标 + 整卡可点（跳网页看详情） ---- */
+.xcard[data-ext] {
+  cursor: pointer;
+  /* 追加 transform：保留主题渐变过渡，滚动期由 #widget.scrolling 统一禁用 */
+  transition: background-color 1.2s ease, border-color 1.2s ease, box-shadow 1.2s ease, transform .18s ease;
+}
+.xcard[data-ext]:hover { transform: translateY(-1px); }
+.x-ext {
+  flex: none; width: 17px; height: 17px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9.5px; line-height: 1; color: var(--ink-soft);
+  background: rgba(120, 100, 80, 0.1);
+  opacity: .55;
+  transition: opacity .18s ease, transform .18s ease, background .2s ease;
+}
+.xcard[data-ext]:hover .x-ext { opacity: 1; transform: translate(1px, -1px); background: rgba(120, 100, 80, 0.17); }
 .x-segs { display: flex; gap: 4px; }
 .x-segs i {
   flex: 1; height: 5px; border-radius: 4px;
@@ -1341,52 +1356,61 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-track i.fill.warn { background: var(--sun); }
 .x-track i.fill.bad { background: var(--red); }
 
-/* ---- ① 紫外线：光线扫过 ---- */
-.x-uv { background: linear-gradient(160deg, rgba(255, 243, 210, 0.92), rgba(255, 232, 182, 0.82)); }
+/* ---- ① 紫外线：日芒缓转 + 光扫（宫崎骏暖阳水彩） ---- */
+.x-uv { background: linear-gradient(160deg, rgba(255, 240, 196, 0.95), rgba(255, 224, 162, 0.88)); }
 .x-uv::after {
   content: ''; position: absolute; inset: -40% -60%; pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.55) 50%, transparent 58%);
-  transform: translateX(-70%);
-  animation: x-sweep 5.2s ease-in-out infinite;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.75) 50%, transparent 62%);
+  transform: translateX(-90%);
+  animation: x-sweep 4.2s cubic-bezier(.45, 0, .3, 1) infinite;
 }
 .x-uv .x-ico svg g {
   transform-box: fill-box; transform-origin: center;
-  animation: x-spin 16s linear infinite; /* 日芒缓转 */
+  animation: x-spin 12s linear infinite; /* 日芒缓转 */
 }
+.x-uv.lv4::after, .x-uv.lv5::after { animation-duration: 3.2s; }
 @keyframes x-sweep {
-  0%, 55% { transform: translateX(-70%); }
-  85%, 100% { transform: translateX(70%); }
+  0%, 48% { transform: translateX(-90%); }
+  82%, 100% { transform: translateX(90%); }
 }
 @keyframes x-spin { to { transform: rotate(360deg); } }
 
-/* ---- ② 花粉：微粒漂浮 ---- */
-.x-pollen { background: linear-gradient(160deg, rgba(238, 248, 224, 0.92), rgba(224, 240, 204, 0.82)); }
+/* ---- ② 花粉：微粒漂浮（水彩草绿，浓度越高漂得越欢） ---- */
+.x-pollen { background: linear-gradient(160deg, rgba(238, 250, 218, 0.95), rgba(220, 240, 196, 0.88)); }
 .x-pollen::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
+  content: ''; position: absolute; inset: -18px; pointer-events: none;
   background-image:
-    radial-gradient(2.6px 2.6px at 18% 30%, rgba(151, 196, 89, 0.5), transparent),
-    radial-gradient(2.2px 2.2px at 72% 18%, rgba(186, 117, 23, 0.42), transparent),
-    radial-gradient(2.4px 2.4px at 46% 66%, rgba(151, 196, 89, 0.42), transparent),
-    radial-gradient(2px 2px at 86% 58%, rgba(186, 117, 23, 0.36), transparent);
-  animation: x-drift 7s ease-in-out infinite alternate;
+    radial-gradient(3.2px 3.2px at 18% 30%, rgba(151, 196, 89, 0.72), transparent),
+    radial-gradient(2.8px 2.8px at 72% 18%, rgba(216, 146, 42, 0.6), transparent),
+    radial-gradient(3px 3px at 46% 66%, rgba(151, 196, 89, 0.6), transparent),
+    radial-gradient(2.6px 2.6px at 86% 58%, rgba(216, 146, 42, 0.52), transparent),
+    radial-gradient(2.4px 2.4px at 30% 82%, rgba(255, 235, 160, 0.7), transparent),
+    radial-gradient(2.2px 2.2px at 62% 38%, rgba(255, 235, 160, 0.55), transparent);
+  animation: x-drift 5.2s ease-in-out infinite alternate;
 }
+.x-pollen.lv4::after, .x-pollen.lv5::after { animation-duration: 3.6s; }
 @keyframes x-drift {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(6px, -8px, 0); }
+  from { transform: translate3d(0, 2px, 0); }
+  to { transform: translate3d(12px, -14px, 0); }
 }
 
-/* ---- ③ 风力：流线飘移 + 罗盘 ---- */
-.x-wind { background: linear-gradient(160deg, rgba(226, 240, 252, 0.92), rgba(206, 228, 248, 0.82)); }
+/* ---- ③ 风力：流线飘移 + 罗盘（风越大流线越快） ---- */
+.x-wind { background: linear-gradient(160deg, rgba(218, 238, 254, 0.95), rgba(192, 222, 250, 0.88)); }
 .x-wind::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: -80%; width: 160%;
-  background-image: repeating-linear-gradient(90deg, transparent 0 26px, rgba(255, 255, 255, 0.4) 26px 34px, transparent 34px 62px);
+  background-image: repeating-linear-gradient(90deg, transparent 0 26px, rgba(255, 255, 255, 0.7) 26px 34px, transparent 34px 62px);
   -webkit-mask-image: linear-gradient(180deg, transparent, #000 25% 75%, transparent);
           mask-image: linear-gradient(180deg, transparent, #000 25% 75%, transparent);
-  opacity: .55;
-  animation: x-flow 7s linear infinite;
+  opacity: .7;
+  animation: x-flow 6s linear infinite;
   pointer-events: none;
 }
 @keyframes x-flow { to { transform: translateX(62px); } }
+.x-wind.lv1::after { animation-duration: 11s; opacity: .5; }
+.x-wind.lv2::after { animation-duration: 8.5s; opacity: .58; }
+.x-wind.lv3::after { animation-duration: 6s; }
+.x-wind.lv4::after { animation-duration: 4s; opacity: .82; }
+.x-wind.lv5::after { animation-duration: 2.6s; opacity: .95; }
 .x-wind-wrap { display: flex; align-items: center; gap: 10px; }
 .x-compass { width: 72px; height: 72px; flex: 0 0 auto; }
 .x-compass svg { width: 100%; height: 100%; }
@@ -1401,83 +1425,144 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .xc-needle rect { fill: #185fa5; }
 @keyframes x-needle { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---- ④ 能见度：雾带弥散 ---- */
-.x-visib { background: linear-gradient(160deg, rgba(232, 238, 244, 0.92), rgba(214, 226, 238, 0.82)); }
+/* ---- ④ 能见度：山峦雾带弥散（雾越浓动效越明显） ---- */
+.x-visib { background: linear-gradient(160deg, rgba(228, 238, 248, 0.95), rgba(206, 224, 242, 0.88)); }
 .x-visib::after {
-  content: ''; position: absolute; left: -30%; right: -30%; bottom: -12%; height: 62%;
+  content: ''; position: absolute; left: -30%; right: -30%; bottom: -12%; height: 70%;
   background:
-    radial-gradient(60% 100% at 30% 100%, rgba(255, 255, 255, 0.75), transparent 70%),
-    radial-gradient(55% 100% at 72% 100%, rgba(255, 255, 255, 0.6), transparent 72%);
-  animation: x-mist 8s ease-in-out infinite alternate;
+    radial-gradient(60% 100% at 26% 100%, rgba(255, 255, 255, 0.95), transparent 70%),
+    radial-gradient(55% 100% at 68% 100%, rgba(255, 255, 255, 0.8), transparent 72%),
+    radial-gradient(48% 90% at 96% 100%, rgba(255, 255, 255, 0.65), transparent 70%);
+  animation: x-mist 6.5s ease-in-out infinite alternate;
   pointer-events: none;
 }
 @keyframes x-mist {
-  from { transform: translateX(-4%); opacity: .55; }
-  to { transform: translateX(4%); opacity: .9; }
+  from { transform: translateX(-7%); opacity: .6; }
+  to { transform: translateX(7%); opacity: 1; }
 }
+.x-visib.lv1::after { animation-duration: 4.6s; }
+.x-visib.lv2::after { animation-duration: 5.6s; }
 
-/* ---- ⑤ 穿衣：光线斜照 ---- */
-.x-dress { background: linear-gradient(160deg, rgba(238, 236, 252, 0.92), rgba(224, 220, 248, 0.82)); }
+/* ---- ⑤ 穿衣：晾衣绳小衣服随风轻摆（iOS 弹性摆动） ---- */
+.x-dress { background: linear-gradient(160deg, rgba(240, 234, 254, 0.95), rgba(224, 214, 250, 0.88)); }
 .x-dress::after {
   content: ''; position: absolute; inset: -30% -50%; pointer-events: none;
-  background: repeating-linear-gradient(118deg, transparent 0 30px, rgba(255, 255, 255, 0.3) 30px 44px);
-  animation: x-rays 9s ease-in-out infinite alternate;
+  background: repeating-linear-gradient(118deg, transparent 0 30px, rgba(255, 255, 255, 0.5) 30px 46px);
+  animation: x-rays 7.5s ease-in-out infinite alternate;
 }
 @keyframes x-rays {
-  from { transform: translateX(-30px); }
-  to { transform: translateX(30px); }
+  from { transform: translateX(-46px); }
+  to { transform: translateX(46px); }
+}
+.x-cloth { /* 小衣服（纯 CSS 剪影） */
+  position: absolute; right: 13px; top: 42px; width: 30px; height: 34px;
+  transform-origin: 50% -8px;
+  animation: x-sway 3.4s cubic-bezier(.34, 1.45, .55, 1) infinite alternate;
+  pointer-events: none; z-index: 1;
+}
+.x-cloth i {
+  display: block; width: 100%; height: 100%;
+  background: linear-gradient(170deg, rgba(255, 178, 190, 0.95), rgba(240, 130, 158, 0.85));
+  clip-path: polygon(22% 0, 38% 8%, 62% 8%, 78% 0, 100% 18%, 86% 34%, 74% 26%, 74% 100%, 26% 100%, 26% 26%, 14% 34%, 0 18%);
+  box-shadow: 0 3px 8px rgba(200, 110, 140, 0.3);
+}
+.x-cloth i::after { /* 一粒扣子 */
+  content: ''; position: absolute; left: 50%; top: 42%; width: 3px; height: 3px;
+  border-radius: 50%; background: rgba(255, 255, 255, 0.9); transform: translateX(-50%);
+}
+@keyframes x-sway {
+  from { transform: rotate(-9deg); }
+  to { transform: rotate(9deg); }
 }
 
-/* ---- ⑥ 洗车：水波涟漪（双环错拍） ---- */
-.x-carwash { background: linear-gradient(160deg, rgba(224, 240, 252, 0.92), rgba(202, 228, 248, 0.82)); }
-.x-carwash::after,
-.x-carwash .x-body::after {
-  content: ''; position: absolute; left: 50%; top: 60%; width: 110px; height: 110px;
-  margin: -55px 0 0 -55px; border-radius: 50%;
-  border: 2px solid rgba(24, 95, 165, 0.28);
-  animation: x-ripple 3.2s ease-out infinite;
-  pointer-events: none;
+/* ---- ⑥ 洗车：雨天水珠滚落 / 晴天星闪（语义化，替换抽象涟漪） ---- */
+.x-carwash { background: linear-gradient(160deg, rgba(216, 238, 254, 0.95), rgba(188, 222, 250, 0.88)); }
+.x-carwash.sunny { background: linear-gradient(160deg, rgba(255, 244, 214, 0.95), rgba(255, 228, 178, 0.88)); }
+.x-drops { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.x-drops i {
+  position: absolute; width: 5px; height: 9px; border-radius: 50% 50% 55% 55%;
+  background: linear-gradient(180deg, rgba(150, 205, 250, 0.25), rgba(70, 145, 225, 0.8));
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.55);
+  top: 26%; /* 静态位在卡内：动效静止时也是一颗可见的水珠装饰 */
+  animation: x-drop 2.6s cubic-bezier(.4, .1, .6, .9) infinite;
 }
-.x-carwash .x-body::after { animation-delay: 1.6s; }
-@keyframes x-ripple {
-  0% { transform: scale(.35); opacity: .8; }
-  75%, 100% { transform: scale(1.25); opacity: 0; }
+.x-drops i:nth-child(1) { left: 18%; animation-delay: 0s; }
+.x-drops i:nth-child(2) { left: 52%; top: 48%; animation-delay: -.9s; width: 4px; height: 7px; }
+.x-drops i:nth-child(3) { left: 79%; top: 34%; animation-delay: -1.7s; }
+@keyframes x-drop {
+  0% { transform: translateY(-42px); opacity: 0; }
+  12% { opacity: .95; }
+  88% { opacity: .95; }
+  100% { transform: translateY(92px); opacity: 0; }
+}
+/* 晴天：水珠变星闪 */
+.x-carwash.sunny .x-drops i {
+  width: 7px; height: 7px; top: 22%; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fffdf2, rgba(255, 214, 110, 0.95));
+  box-shadow: 0 0 10px rgba(255, 210, 90, 0.85);
+  animation: x-sparkle 2.2s ease-in-out infinite;
+}
+.x-carwash.sunny .x-drops i:nth-child(1) { left: 22%; }
+.x-carwash.sunny .x-drops i:nth-child(2) { left: 68%; top: 52%; }
+.x-carwash.sunny .x-drops i:nth-child(3) { left: 84%; top: 30%; }
+@keyframes x-sparkle {
+  0%, 100% { transform: scale(.5); opacity: .25; }
+  50% { transform: scale(1.25); opacity: 1; }
 }
 
-/* ---- ⑦ 晾晒：暖光呼吸 ---- */
-.x-dry { background: linear-gradient(160deg, rgba(255, 246, 222, 0.92), rgba(252, 236, 198, 0.82)); }
+/* ---- ⑦ 晾晒：暖阳呼吸 + 晾晒衣物随风摆 ---- */
+.x-dry { background: linear-gradient(160deg, rgba(255, 244, 214, 0.95), rgba(252, 232, 188, 0.88)); }
 .x-dry::after {
-  content: ''; position: absolute; right: -22%; top: -34%; width: 150px; height: 150px;
-  background: radial-gradient(circle, rgba(255, 200, 90, 0.5), transparent 65%);
-  animation: x-warm 4.6s ease-in-out infinite alternate;
+  content: ''; position: absolute; right: -22%; top: -34%; width: 170px; height: 170px;
+  background: radial-gradient(circle, rgba(255, 200, 90, 0.75), transparent 65%);
+  animation: x-warm 3.8s ease-in-out infinite alternate;
   pointer-events: none;
 }
 @keyframes x-warm {
-  from { transform: scale(1); opacity: .65; }
-  to { transform: scale(1.18); opacity: 1; }
+  from { transform: scale(1); opacity: .7; }
+  to { transform: scale(1.28); opacity: 1; }
+}
+.x-cloth.warm i {
+  background: linear-gradient(170deg, rgba(168, 222, 255, 0.95), rgba(96, 172, 240, 0.85));
+  box-shadow: 0 3px 8px rgba(110, 160, 220, 0.3);
 }
 
-/* ---- ⑧ 感冒：冰晶脉动 ---- */
-.x-cold { background: linear-gradient(160deg, rgba(226, 242, 250, 0.92), rgba(206, 232, 246, 0.82)); }
-.x-cold::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(70% 60% at 80% 20%, rgba(150, 210, 240, 0.5), transparent 65%);
+/* ---- ⑧ 感冒：小雪花飘落（元素式） + 冰晶呼吸 ---- */
+.x-cold { background: linear-gradient(160deg, rgba(220, 240, 252, 0.95), rgba(196, 228, 248, 0.88)); }
+.x-flakes { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.x-flakes i {
+  position: absolute; top: 14%; width: 4px; height: 4px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+  animation: x-snow 4.2s linear infinite;
+}
+.x-flakes i:nth-child(1) { left: 16%; animation-delay: 0s; }
+.x-flakes i:nth-child(2) { left: 40%; top: 42%; animation-delay: -1.1s; width: 3px; height: 3px; }
+.x-flakes i:nth-child(3) { left: 66%; top: 28%; animation-delay: -2.3s; }
+.x-flakes i:nth-child(4) { left: 86%; top: 54%; animation-delay: -3.2s; width: 3px; height: 3px; }
+@keyframes x-snow { from { transform: translateY(-42px); } to { transform: translateY(92px); } }
+.x-cold::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(70% 60% at 82% 18%, rgba(150, 210, 240, 0.55), transparent 65%);
   animation: x-chill 3.8s ease-in-out infinite alternate;
 }
-@keyframes x-chill { from { opacity: .35; } to { opacity: .85; } }
+@keyframes x-chill { from { opacity: .4; } to { opacity: .95; } }
+.x-cold.lv4 .x-flakes i, .x-cold.lv5 .x-flakes i { animation-duration: 2.8s; }
 
-/* ---- ⑨ 月相：星辉 + 月晕 ---- */
-.x-moon { background: linear-gradient(160deg, rgba(226, 228, 250, 0.92), rgba(208, 212, 246, 0.82)); }
+/* ---- ⑨ 月相：星辉眨眼 + 月晕呼吸 ---- */
+.x-moon { background: linear-gradient(160deg, rgba(222, 226, 252, 0.95), rgba(200, 208, 248, 0.88)); }
 .x-moon::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background-image:
-    radial-gradient(1.8px 1.8px at 22% 24%, rgba(255, 255, 255, 0.95), transparent),
-    radial-gradient(1.5px 1.5px at 76% 16%, rgba(255, 255, 255, 0.85), transparent),
-    radial-gradient(1.7px 1.7px at 62% 42%, rgba(255, 255, 255, 0.8), transparent),
-    radial-gradient(1.4px 1.4px at 34% 62%, rgba(255, 255, 255, 0.75), transparent);
-  animation: x-twinkle 3.4s ease-in-out infinite alternate;
+    radial-gradient(2px 2px at 22% 24%, rgba(255, 255, 255, 1), transparent),
+    radial-gradient(1.7px 1.7px at 76% 16%, rgba(255, 255, 255, 0.95), transparent),
+    radial-gradient(1.9px 1.9px at 62% 42%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1.6px 1.6px at 34% 62%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1.5px 1.5px at 86% 66%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1.4px 1.4px at 10% 78%, rgba(255, 255, 255, 0.8), transparent);
+  animation: x-twinkle 2.6s ease-in-out infinite alternate;
 }
-@keyframes x-twinkle { from { opacity: .3; } to { opacity: 1; } }
+@keyframes x-twinkle { from { opacity: .15; } to { opacity: 1; } }
 .x-moon-wrap { display: flex; align-items: center; gap: 10px; }
 .x-moonball { width: 58px; height: 58px; flex: 0 0 auto; }
 .xm-halo {
@@ -1516,7 +1601,7 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
   display: inline-block; width: 12px; border-radius: 6px 6px 3px 3px;
   background: linear-gradient(180deg, var(--sun), rgba(242, 169, 59, 0.35));
   transform-origin: bottom;
-  animation: x-grow .9s cubic-bezier(.2, .8, .3, 1) both;
+  animation: x-grow .9s cubic-bezier(.34, 1.45, .55, 1) both; /* iOS 弹性生长 */
 }
 .x-3col .grow.mid { background: linear-gradient(180deg, var(--blue), rgba(91, 143, 212, 0.35)); }
 .x-3col > div:nth-child(2) .grow { animation-delay: .12s; }
@@ -1541,7 +1626,7 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-bcol i {
   width: 8px; border-radius: 5px; background: rgba(120, 100, 80, 0.16);
   transform-origin: bottom;
-  animation: x-grow .8s cubic-bezier(.2, .8, .3, 1) both;
+  animation: x-grow .8s cubic-bezier(.34, 1.45, .55, 1) both;
 }
 .x-bcol i.wet { background: linear-gradient(180deg, var(--blue), rgba(91, 143, 212, 0.4)); }
 .x-bcol span { font-size: 8.5px; color: var(--ink-soft); }
@@ -1555,6 +1640,17 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-2col b { color: var(--ink); font-weight: 500; }
 .x-2col.x-base { align-items: baseline; }
 .x-num { font-size: 19px; color: var(--ink); font-weight: 500; }
+.x-arrow { /* 气压升降小箭头：上下轻浮动 */
+  display: inline-block; width: 0; height: 0; margin: 0 4px;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  animation: x-bob 1.8s cubic-bezier(.34, 1.45, .55, 1) infinite alternate;
+}
+.x-arrow.up { border-bottom: 6px solid var(--red); }
+.x-arrow.down { border-top: 6px solid var(--blue); }
+@keyframes x-bob {
+  from { translate: 0 1px; }
+  to { translate: 0 -2.5px; }
+}
 
 /* ---- ⑫ 气压：曲线绘制 ---- */
 .x-pressure { background: linear-gradient(160deg, rgba(228, 246, 240, 0.92), rgba(206, 236, 226, 0.82)); }
@@ -1574,14 +1670,14 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 }
 
 /* ---- ⑬ 多城市：流云飘移 ---- */
-.x-cities { background: linear-gradient(160deg, rgba(228, 240, 252, 0.92), rgba(212, 232, 250, 0.82)); }
+.x-cities { background: linear-gradient(160deg, rgba(222, 238, 254, 0.95), rgba(204, 228, 252, 0.88)); }
 .x-cities::after {
-  content: ''; position: absolute; top: 10px; left: -42%; width: 72%; height: 26px;
+  content: ''; position: absolute; top: 8px; left: -42%; width: 82%; height: 32px;
   background:
-    radial-gradient(20px 12px at 30% 60%, rgba(255, 255, 255, 0.75), transparent 70%),
-    radial-gradient(26px 14px at 55% 45%, rgba(255, 255, 255, 0.65), transparent 70%),
-    radial-gradient(18px 11px at 78% 62%, rgba(255, 255, 255, 0.6), transparent 70%);
-  animation: x-cloud 11s linear infinite alternate;
+    radial-gradient(24px 14px at 30% 60%, rgba(255, 255, 255, 0.95), transparent 70%),
+    radial-gradient(32px 17px at 55% 42%, rgba(255, 255, 255, 0.85), transparent 70%),
+    radial-gradient(22px 13px at 78% 62%, rgba(255, 255, 255, 0.8), transparent 70%);
+  animation: x-cloud 9s linear infinite alternate;
   pointer-events: none;
 }
 @keyframes x-cloud {
@@ -1622,17 +1718,34 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-radar { background: linear-gradient(160deg, rgba(232, 246, 228, 0.92), rgba(218, 238, 210, 0.82)); }
 .x-radar-view {
   position: relative; height: 132px; border-radius: 12px; overflow: hidden;
-  background: linear-gradient(160deg, #2e4a3a, #24382e);
+  background: linear-gradient(160deg, #2e4a3a, #24382e); /* 瓦片加载失败的底色兜底 */
 }
 .x-radar-move { position: absolute; left: 50%; top: 50%; width: 768px; height: 768px; margin: -384px 0 0 -384px; }
-.x-rlayer { position: absolute; inset: 0; transition: opacity .7s ease; }
+.x-rlayer { position: absolute; inset: 0; transition: opacity .6s ease; }
+.x-rlayer.x-rbase { transition: none; } /* 卫星底图常显，不参与帧循环 */
 .x-rtile { position: absolute; width: 256px; height: 256px; }
-.x-radar-view::after { /* 扫掠光束（旋转只动 transform） */
-  content: ''; position: absolute; left: 50%; top: 50%; width: 150px; height: 150px;
-  margin: -75px 0 0 -75px; border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(174, 240, 192, 0.32), transparent 72deg, transparent);
-  animation: x-spin 4.5s linear infinite;
+.x-radar-sweep { /* 真雷达式扫掠：锥形光束（宽亮叶片+渐隐拖尾）与扫描线同元素旋转，天然同相 */
+  content: ''; position: absolute; inset: -25%;
+  background: conic-gradient(from 0deg,
+    rgba(140, 230, 255, 0) 0deg,
+    rgba(140, 230, 255, 0.06) 190deg,
+    rgba(140, 230, 255, 0.2) 300deg,
+    rgba(170, 240, 255, 0.48) 336deg,
+    rgba(215, 250, 255, 0.85) 356deg,
+    rgba(240, 253, 255, 0.95) 360deg);
+  animation: x-spin 3.2s linear infinite;
   pointer-events: none;
+}
+.x-radar-sweep::before { /* 扫描亮线：随父元素一起转，永远贴着锥形亮叶片边缘 */
+  content: ''; position: absolute; left: 50%; top: 50%; width: 130%; height: 2px;
+  transform-origin: 0 50%; transform: rotate(-90deg); /* 指向 12 点 = 锥形亮叶片起始边 */
+  background: linear-gradient(90deg, rgba(230, 252, 255, 0.95), rgba(170, 240, 255, 0.35) 55%, transparent);
+  pointer-events: none;
+}
+.x-attr { /* 地图数据版权（合规要求，不可删） */
+  position: absolute; right: 6px; bottom: 4px; z-index: 3;
+  font-size: 8px; line-height: 1; color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55); pointer-events: none; white-space: nowrap;
 }
 .x-radar-ring {
   position: absolute; left: 50%; top: 50%;
@@ -1656,12 +1769,20 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
   to { transform: scale(3.2); opacity: 0; }
 }
 
-/* ---- ⑮ 自定义提醒：开关 + 铃摆（图标内） ---- */
-.x-alerts { background: linear-gradient(160deg, rgba(252, 244, 226, 0.92), rgba(250, 234, 204, 0.82)); }
+/* ---- ⑮ 自定义提醒：开关 + 铃铛摇摆 ---- */
+.x-alerts { background: linear-gradient(160deg, rgba(252, 242, 218, 0.95), rgba(250, 228, 190, 0.88)); }
 .x-alerts::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(65% 55% at 82% 18%, rgba(250, 200, 120, 0.42), transparent 65%);
+  background: radial-gradient(65% 55% at 82% 18%, rgba(250, 200, 120, 0.55), transparent 65%);
   animation: x-chill 4.8s ease-in-out infinite alternate;
+}
+.x-alerts .x-ico svg {
+  transform-box: fill-box; transform-origin: 50% 12%;
+  animation: x-bell 3.2s cubic-bezier(.34, 1.45, .55, 1) infinite alternate;
+}
+@keyframes x-bell {
+  from { transform: rotate(-9deg); }
+  to { transform: rotate(9deg); }
 }
 .x-alertrow { display: flex; align-items: center; gap: 8px; padding: 3px 2px; }
 .x-alertrow > div { flex: 1; min-width: 0; }
@@ -1675,17 +1796,17 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-switch i {
   position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%;
   background: #fff;
-  transition: transform .25s cubic-bezier(.3, .9, .3, 1);
+  transition: transform .32s cubic-bezier(.34, 1.45, .55, 1); /* iOS 弹性滑动 */
 }
 .x-switch.on { background: var(--green); }
 .x-switch.on i { transform: translateX(13px); }
 
 /* ---- ⑯ 分享卡：光泽扫过 ---- */
-.x-share { background: linear-gradient(160deg, rgba(252, 236, 242, 0.92), rgba(248, 222, 234, 0.82)); }
+.x-share { background: linear-gradient(160deg, rgba(252, 232, 240, 0.95), rgba(248, 214, 230, 0.88)); }
 .x-share::after {
   content: ''; position: absolute; inset: -40% -60%; pointer-events: none;
-  background: linear-gradient(115deg, transparent 44%, rgba(255, 255, 255, 0.5) 50%, transparent 56%);
-  animation: x-shine 6s ease-in-out infinite;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.72) 50%, transparent 60%);
+  animation: x-shine 4.6s ease-in-out infinite;
 }
 @keyframes x-shine {
   0%, 60% { transform: translateX(-75%); }
@@ -1735,6 +1856,7 @@ body.night .x-precipstat { background: linear-gradient(160deg, rgba(32, 50, 82, 
 body.night .x-pressure { background: linear-gradient(160deg, rgba(30, 58, 50, 0.72), rgba(24, 44, 40, 0.6)); }
 body.night .x-cities { background: linear-gradient(160deg, rgba(34, 52, 84, 0.72), rgba(26, 40, 66, 0.6)); }
 body.night .x-radar { background: linear-gradient(160deg, rgba(38, 58, 40, 0.72), rgba(28, 44, 32, 0.6)); }
+body.night .x-radar-move { filter: brightness(0.72) saturate(0.92); }
 body.night .x-alerts { background: linear-gradient(160deg, rgba(70, 56, 30, 0.72), rgba(52, 42, 24, 0.6)); }
 body.night .x-share { background: linear-gradient(160deg, rgba(70, 42, 58, 0.72), rgba(52, 32, 44, 0.6)); }
 body.night .x-badge { background: rgba(160, 175, 210, 0.18); color: #c6cfe6; }
@@ -1754,16 +1876,21 @@ body.night .xc-tick path { stroke: rgba(165, 190, 240, 0.5); }
 body.night .xc-lab text { fill: #98a6c8; }
 body.night .xm-disc { fill: #e6e9fb; stroke: rgba(190, 195, 250, 0.5); }
 body.night .x-switch { background: rgba(160, 175, 210, 0.25); }
+body.night .x-cloth { filter: brightness(0.82) saturate(0.9); }
+body.night .x-drops i { filter: brightness(0.92); }
+body.night .x-ext { background: rgba(160, 175, 210, 0.16); color: #c6cfe6; }
+body.night .xcard[data-ext]:hover .x-ext { background: rgba(160, 175, 210, 0.26); }
 
-/* ---- 全静止降级：动效只许 transform/opacity，这里全部关掉 ---- */
-@media (prefers-reduced-motion: reduce) {
-  .xcard::before, .xcard::after, .x-carwash .x-body::after,
-  .x-ico svg, .x-ico svg *, .xm-halo, .xc-needle,
-  .x-suntrack i, .x-3col .grow, .x-bcol i,
-  .xs-line, .xs-area, .x-radar-view::after, .x-radar-me::after,
-  .x-switch i, .x-track i.fill, .x-chips i, .x-badge, .x-segs i {
-    animation: none !important;
-    transition: none !important;
-  }
-  .xs-line { stroke-dashoffset: 0; }
+/* ---- 全静止降级：动效只许 transform/opacity，这里全部关掉（由「动效」设置驱动 body.motion-quiet） ---- */
+body.motion-quiet .xcard::before, body.motion-quiet .xcard::after,
+body.motion-quiet .x-drops i, body.motion-quiet .x-flakes i, body.motion-quiet .x-cloth, body.motion-quiet .x-arrow,
+body.motion-quiet .x-ico svg, body.motion-quiet .x-ico svg *, body.motion-quiet .xm-halo, body.motion-quiet .xc-needle,
+body.motion-quiet .x-suntrack i, body.motion-quiet .x-3col .grow, body.motion-quiet .x-bcol i,
+body.motion-quiet .xs-line, body.motion-quiet .xs-area,
+body.motion-quiet .x-radar-sweep, body.motion-quiet .x-radar-me::after,
+body.motion-quiet .x-switch i, body.motion-quiet .x-track i.fill,
+body.motion-quiet .x-chips i, body.motion-quiet .x-badge, body.motion-quiet .x-segs i {
+  animation: none !important;
+  transition: none !important;
 }
+body.motion-quiet .xs-line { stroke-dashoffset: 0; }

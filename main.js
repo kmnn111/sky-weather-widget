@@ -15,6 +15,8 @@ if (SHOT_MODE) {
 
 // 网络抓取（网络层故障自动重试）/ 地名解析 / 地点搜索（Nominatim + Open-Meteo 双源兜底）
 const { got, clean, parseNominatim, searchPlaces, friendlyNetError } = require('./geo.js');
+// 外链白名单（数据卡 → 网页详情跳转）
+const { isAllowedExtUrl } = require('./ext-guard.js');
 
 /* ---------------- 设置持久化 ---------------- */
 let win = null;
@@ -124,8 +126,8 @@ async function fetchRadarFrames() {
   if (Date.now() - radarCache.ts < 5 * 60 * 1000 && radarCache.data) return radarCache.data;
   try {
     const meta = await got('https://api.rainviewer.com/public/weather-maps.json', 12000);
-    const past = (meta.radar && meta.radar.past || []).slice(-4);
-    const nowcast = (meta.radar && meta.radar.nowcast || []).slice(0, 2);
+    const past = (meta.radar && meta.radar.past || []).slice(-8);
+    const nowcast = (meta.radar && meta.radar.nowcast || []).slice(0, 3);
     radarCache = { ts: Date.now(), data: { host: meta.host || 'https://tilecache.rainviewer.com', past, nowcast } };
     return radarCache.data;
   } catch (e) {
@@ -298,7 +300,7 @@ function checkSnap() {
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings);
   // 设置写入白名单：渲染层只允许改这几个键（防任意键注入/原型污染/updateUrl 被劫持到恶意更新源）
-  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules', 'modulesOrder', 'cities', 'alerts']);
+  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules', 'modulesOrder', 'cities', 'alerts', 'motion']);
   const MODULE_KEYS = new Set(['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac',
     'uv', 'pollen', 'wind', 'visib', 'dress', 'carwash', 'dry', 'cold',
     'moon', 'history', 'precipstat', 'pressure', 'cities', 'radar', 'alerts', 'share']);
@@ -365,6 +367,9 @@ function registerIpc() {
               label: String(a2 && a2.label || '').slice(0, 60)
             }));
           }
+        } else if (k === 'motion') {
+          // 动效模式：枚举白名单（字符串键必须显式分支，否则被 typeof boolean 分支静默丢弃）
+          if (v === 'on' || v === 'system' || v === 'off') safe.motion = v;
         } else if (typeof v === 'boolean' || k === 'unit' || k === 'autoLocate') {
           safe[k] = v;
         }
@@ -499,6 +504,13 @@ function registerIpc() {
 
   ipcMain.handle('app:version', () => app.getVersion());
 
+  // 外链跳转（数据卡 → 网页详情）：白名单校验通过才交给系统默认浏览器
+  ipcMain.handle('ext:open', (_e, url) => {
+    if (!isAllowedExtUrl(url)) return false;
+    shell.openExternal(String(url)).catch(() => { });
+    return true;
+  });
+
   // OTA 在线更新
   ipcMain.handle('update:check', () => { checkForUpdates(true); return true; });
   ipcMain.handle('update:download', () => { startUpdateDownload(); return true; });
@@ -590,6 +602,8 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
+  // shot 自检：加载前清一次 HTTP 缓存，防止 file:// 的 styles.css 等被磁盘缓存住（改动看似不生效）
+  if (SHOT_MODE) { try { win.webContents.session.clearCache().catch(() => { }); } catch (e) { } }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.show());
   win.webContents.on('did-finish-load', () => {
@@ -757,12 +771,14 @@ function createWindow() {
           return new Promise(r => {
             const s = [];
             const t0 = performance.now();
-            const tick = () => {
+            const push = () => {
               const t = performance.now() - t0;
-              s.push([Math.round(t), getComputedStyle(sky).clipPath]);
-              if (t < 650) requestAnimationFrame(tick); else r(JSON.stringify(s));
+              if (t < 650) s.push([Math.round(t), getComputedStyle(sky).clipPath]);
             };
+            const tick = () => { push(); if (performance.now() - t0 < 650) requestAnimationFrame(tick); };
             requestAnimationFrame(tick);
+            const iv = setInterval(push, 50); // rAF 被长任务饿死时的兜底采样，保证帧密度
+            setTimeout(() => { clearInterval(iv); r(JSON.stringify(s)); }, 700);
           });
         })()`));
         const distinct = new Set(morph.map(x => x[1])).size;
