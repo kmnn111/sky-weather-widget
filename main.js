@@ -78,8 +78,12 @@ function migrateLocations() {
 
 /* ---------------- 地理解析：见 geo.js（parseNominatim）---------------- */
 
-/* ---------------- 天气 / 空气质量 ---------------- */
-async function fetchWeather(lat, lon) {
+/* ---------------- 天气 / 空气质量 ----------------
+   国内源优先合并（2026-11 换源）：实况/7 天/日出日落/空气 pm 走中国天气网 + itboy，
+   逐时/分钟级/UV/花粉等国内无免密钥源的字段仍由 Open-Meteo 提供；
+   国内源失败自动整体降级 Open-Meteo（返回结构里 sources 如实标注各段来源）。 */
+const cnSrc = require('./cn-source.js');
+async function fetchWeather(lat, lon, name, code) {
   const f = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,weather_code,` +
     `cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility` +
@@ -94,8 +98,14 @@ async function fetchWeather(lat, lon) {
     `&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,us_aqi,european_aqi` +
     `&hourly=alder_pollen,birch_pollen,grass_pollen,ragweed_pollen` +
     `&timezone=auto&forecast_days=3`;
-  const [w, q] = await Promise.all([got(f, 15000), got(a, 15000).catch(() => null)]);
-  return { weather: w, air: q, fetchedAt: Date.now() };
+  // 三路并行：OM 天气 + OM 空气 + 国内源（失败返回 null 不拖垮主流程）
+  const [omPair, cn] = await Promise.all([
+    Promise.all([got(f, 15000), got(a, 15000).catch(() => null)]),
+    (name || code) ? cnSrc.fetchCn(name, code).catch(() => null) : Promise.resolve(null)
+  ]);
+  const [w, q] = omPair;
+  const sources = cnSrc.mergeCn(w, q, cn);
+  return { weather: w, air: q, fetchedAt: Date.now(), sources, cnAlerts: cn ? cn.alerts : [], cnZs: cn ? cn.zs : null };
 }
 
 /* ---------------- 历史气候（open-meteo archive，24h 缓存） ----------------
@@ -136,8 +146,23 @@ async function fetchRadarFrames() {
   }
 }
 
-/* ---------------- 多城市轻量实况（分享/关注列表用） ---------------- */
-async function fetchCityCurrent(lat, lon) {
+/* ---------------- 多城市轻量实况（分享/关注列表用） ----------------
+   国内源优先：weather_index 实况（dataSK）为准，失败降级 Open-Meteo */
+async function fetchCityCurrent(lat, lon, name, code) {
+  if (name || code) {
+    try {
+      const cd = code || await cnSrc.searchCityCode(name);
+      const idx = cd ? await cnSrc.fetchIndex(cd) : null;
+      const wmo = idx && idx.sk ? cnSrc.wmoFromCn(idx.sk.weathercode, idx.sk.weather) : null;
+      const t = idx && idx.sk ? parseFloat(idx.sk.temp) : null;
+      if (wmo && Number.isFinite(t)) {
+        return {
+          current: { temperature_2m: t, weather_code: wmo.wmo, is_day: wmo.isDay },
+          source: 'cn'
+        };
+      }
+    } catch (e) { /* 降级 OM */ }
+  }
   const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&current=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=1`;
   return got(u, 12000);
@@ -415,7 +440,7 @@ function registerIpc() {
 
   ipcMain.handle('weather:get', (_e, p) => {
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve({ error: '坐标无效' });
-    return fetchWeather(p.lat, p.lon).catch(err => ({ error: String(err.message || err) }));
+    return fetchWeather(p.lat, p.lon, p.name, p.code).catch(err => ({ error: String(err.message || err) }));
   });
 
   ipcMain.handle('weather:archive', (_e, p) => {
@@ -425,7 +450,7 @@ function registerIpc() {
   ipcMain.handle('radar:frames', () => fetchRadarFrames());
   ipcMain.handle('city:current', (_e, p) => {
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve(null);
-    return fetchCityCurrent(p.lat, p.lon).catch(() => null);
+    return fetchCityCurrent(p.lat, p.lon, p.name, p.code).catch(() => null);
   });
   ipcMain.handle('png:save', (_e, dataURL) => savePng(dataURL).catch(() => null));
 
@@ -872,6 +897,64 @@ function createWindow() {
           });
         })()`));
         console.log('[sprout-test] zero-witty', JSON.stringify(spr), (spr.sprouts === 0 && spr.pops + spr.zeros >= 20 && spr.mm === 8 && spr.mmVals === 8) ? 'PASS' : 'FAIL');
+        // ---- v1.0.23 自检：雷达卡 vivo 式时间轴（sendInputEvent 真实拖动 + 播放/暂停 + 雨情文案） ----
+        // 放在模块开关/排序测试之前：applyModules 重建会清掉 content-visibility:auto 的记住尺寸，
+        // scrollHeight 缩水会让页底卡片够不着（一次性大跳滚动会被占位尺寸 clamp）。
+        // 滚动用迭代式：每跳一段等 content-visibility 重新渲染、scrollHeight 长回来再跳。
+        for (let i = 0; i < 6; i++) {
+          const d = await win.webContents.executeJavaScript(`(() => {
+            const w = document.getElementById("widget"), t = document.getElementById("modRadar");
+            const delta = t.getBoundingClientRect().top - w.getBoundingClientRect().top - 16;
+            if (Math.abs(delta) > 2) w.scrollTop += delta;
+            return Math.round(delta);
+          })()`);
+          if (Math.abs(d) <= 2) break;
+          await new Promise(r => setTimeout(r, 350));
+        }
+        await new Promise(r => setTimeout(r, 500));
+        await shoot('shot-q3-radar.png');
+        const rt0 = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const el = document.getElementById('modRadar');
+          return JSON.stringify({
+            label: (el.querySelector('.x-r-now') || {}).textContent || '',
+            ticks: el.querySelectorAll('.x-r-tick').length,
+            labs: el.querySelectorAll('.x-r-tick b').length,
+            knob: !!el.querySelector('.x-r-knob'),
+            tip: (el.querySelector('.x-r-tip') || {}).textContent || ''
+          });
+        })()`));
+        console.log('[radar-test] timeline-shape', JSON.stringify(rt0), (rt0.ticks >= 2 && rt0.labs >= 2 && rt0.knob) ? 'PASS' : 'FAIL');
+        console.log('[radar-test] rain-tip', JSON.stringify(rt0.tip), rt0.tip ? 'PASS' : 'FAIL');
+        // 真实拖动时间轴到最左（首帧）：起点/落点都留在 track 容器内（落点出容器 pointerup 不冒泡会假绿）
+        const tl = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const t = document.querySelector('#modRadar [data-rscrub] .x-r-track').getBoundingClientRect();
+          return JSON.stringify({ left: Math.round(t.left + 4), right: Math.round(t.right - 4), midY: Math.round(t.top + t.height / 2) });
+        })()`));
+        await win.webContents.sendInputEvent({ type: 'mouseMove', x: tl.right, y: tl.midY });
+        await win.webContents.sendInputEvent({ type: 'mouseDown', x: tl.right, y: tl.midY, button: 'left', clickCount: 1 });
+        for (let i = 1; i <= 5; i++) {
+          await win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(tl.right + (tl.left - tl.right) * i / 5), y: tl.midY });
+          await new Promise(r => setTimeout(r, 80));
+        }
+        await win.webContents.sendInputEvent({ type: 'mouseUp', x: tl.left, y: tl.midY, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 400));
+        const rt1 = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+          const el = document.getElementById('modRadar');
+          const b = el.querySelector('.x-r-tick b.first');
+          return JSON.stringify({
+            label: (el.querySelector('.x-r-now') || {}).textContent || '',
+            play: (el.querySelector('[data-rplay]') || {}).textContent || '',
+            firstLab: b ? b.textContent : ''
+          });
+        })()`));
+        const scrubOk = rt1.firstLab !== '' && rt1.label.indexOf(rt1.firstLab) === 0 && rt1.play === '▶';
+        console.log('[radar-test] scrub-to-first', JSON.stringify({ before: rt0.label, after: rt1.label, firstLab: rt1.firstLab, play: rt1.play }), scrubOk ? 'PASS' : 'FAIL');
+        await shoot('shot-q3-radar-scrubbed.png');
+        // 复位默认播放态（拖动即暂停 → 点回播放）
+        await win.webContents.executeJavaScript(`document.querySelector('#modRadar [data-rplay]').click()`);
+        await new Promise(r => setTimeout(r, 300));
+        const rt2 = await win.webContents.executeJavaScript(`document.querySelector('#modRadar [data-rplay]').textContent`);
+        console.log('[radar-test] play-restore', rt2, rt2 === '❚❚' ? 'PASS' : 'FAIL');
         // 模块开关：真实走设置面板勾选链路（change → updateSettings → applyModules），测完还原
         await win.webContents.executeJavaScript(`document.getElementById("btnSettings").click()`);
         await new Promise(r => setTimeout(r, 500));

@@ -22,7 +22,7 @@ const got = async (u, ms = 12000, opts = {}, tries = 2) => {
       const r = await fetch(u, { signal: ctrl.signal, headers: { 'User-Agent': UA, ...(opts.headers || {}) } });
       clearTimeout(t);
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.json();
+      return opts.text ? await r.text() : await r.json();
     } catch (e) {
       clearTimeout(t);
       lastErr = e;

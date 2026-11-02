@@ -1769,6 +1769,60 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
   to { transform: scale(3.2); opacity: 0; }
 }
 
+/* ---- ⑭b 雷达卡：vivo 式时间轴 + 播放/暂停 + 雨情文案 ---- */
+.x-r-tip {
+  display: inline-block; margin-top: 7px; padding: 4px 10px; border-radius: 999px;
+  font-size: 10.5px; line-height: 1.45; color: var(--ink);
+  background: rgba(107, 181, 221, 0.14);
+}
+.x-r-bar { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+.x-r-play {
+  flex: none; width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
+  background: rgba(107, 181, 221, 0.22); color: var(--ink);
+  font-size: 8px; line-height: 24px; text-align: center; cursor: pointer;
+  transition: background .25s ease;
+}
+.x-r-play:hover { background: rgba(107, 181, 221, 0.42); }
+.x-r-tl {
+  flex: 1; min-width: 0; padding: 9px 12px 15px; cursor: pointer;
+  user-select: none; -webkit-user-select: none; touch-action: none;
+}
+.x-r-track {
+  position: relative; height: 2px; border-radius: 2px;
+  background: rgba(120, 100, 80, 0.18);
+}
+.x-r-fill {
+  position: absolute; inset: 0; border-radius: 2px; transform-origin: 0 50%;
+  background: linear-gradient(90deg, rgba(107, 181, 221, 0.2), rgba(107, 181, 221, 0.85));
+}
+.x-r-tick {
+  position: absolute; top: -2px; width: 1px; height: 6px; transform: translateX(-50%);
+  background: rgba(120, 100, 80, 0.28);
+}
+.x-r-tick.maj { height: 7px; background: rgba(120, 100, 80, 0.48); }
+.x-r-tick b {
+  position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+  font-size: 8.5px; font-weight: normal; line-height: 1; white-space: nowrap; color: var(--ink-soft);
+}
+.x-r-tick b.first { left: 0; transform: none; }
+.x-r-tick b.last { left: auto; right: 0; transform: none; }
+.x-r-knob {
+  position: absolute; top: 50%; left: 0; width: 12px; height: 12px; margin-top: -6px;
+  border-radius: 50%; background: #fff; border: 2px solid var(--sky);
+  box-shadow: 0 1px 4px rgba(42, 32, 22, 0.25);
+}
+.x-adv b.x-r-now { color: var(--ink); font-weight: 600; }
+/* 拖动时间轴期间关掉帧过渡：跟手不拖尾（滚动/拖拽类交互禁加 transition 铁律） */
+body.r-scrubbing .x-rlayer { transition: none; }
+body.night .x-r-tip { background: rgba(122, 168, 235, 0.16); color: #dfe6f8; }
+body.night .x-r-track { background: rgba(160, 175, 210, 0.22); }
+body.night .x-r-fill { background: linear-gradient(90deg, rgba(122, 168, 235, 0.18), rgba(122, 168, 235, 0.8)); }
+body.night .x-r-tick { background: rgba(160, 175, 210, 0.3); }
+body.night .x-r-tick.maj { background: rgba(160, 175, 210, 0.5); }
+body.night .x-r-knob { background: #e6e9fb; border-color: #7aa8eb; }
+body.night .x-r-play { background: rgba(122, 168, 235, 0.25); color: #dfe6f8; }
+body.night .x-r-play:hover { background: rgba(122, 168, 235, 0.42); }
+
 /* ---- ⑮ 自定义提醒：开关 + 铃铛摇摆 ---- */
 .x-alerts { background: linear-gradient(160deg, rgba(252, 242, 218, 0.95), rgba(250, 228, 190, 0.88)); }
 .x-alerts::after {

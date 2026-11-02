@@ -780,7 +780,7 @@
   async function loadWeather() {
     if (!state.loc) return;
     const seq = ++loadSeq;
-    const res = await sky.fetchWeather(state.loc.lat, state.loc.lon);
+    const res = await sky.fetchWeather(state.loc.lat, state.loc.lon, state.loc.name, state.loc.code);
     if (seq !== loadSeq) return; // 已有更新的请求在途/完成，本次响应过期作废
     if (res && res.error) {
       $('condText').textContent = '网络异常';

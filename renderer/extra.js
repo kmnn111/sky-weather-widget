@@ -428,7 +428,7 @@
     const locs = (window.__extraSettings && window.__extraSettings.locations) || [];
     const jobs = locs.slice(0, 8).map(async l => {
       if (cityCache[l.id] && Date.now() - cityCache[l.id].ts < 10 * 60 * 1000) return;
-      const r = await sky.cityCurrent(l.lat, l.lon);
+      const r = await sky.cityCurrent(l.lat, l.lon, l.name, l.code);
       if (r && r.current) cityCache[l.id] = {
         t: Math.round(Number(r.current.temperature_2m)),
         code: Number(r.current.weather_code), isDay: Number(r.current.is_day) !== 0, ts: Date.now()
@@ -480,8 +480,25 @@
       if (window.Extra.hooks && window.Extra.hooks.openPanel) window.Extra.hooks.openPanel();
     });
   }
-  // — 降水雷达（RainViewer 瓦片：帧循环用 opacity 切换，零重绘） —
-  const radar = { frames: null, imgs: [], timer: null, idx: 0, z: 6 };
+  // — 降水雷达（RainViewer 瓦片：帧循环用 opacity 切换，零重绘；vivo 式底部时间轴 + 播放/暂停 + 雨情文案） —
+  const radar = {
+    frames: null, imgs: [], timer: null, idx: 0, z: 6,
+    playing: true,     // 播放态（拖动时间轴暂停，按钮恢复）
+    userPlay: false,   // 用户显式点过播放：静止档也放行（显式手势即同意动效）
+    dragging: false,   // 时间轴拖动中：关帧过渡保跟手
+    ts: 0, locKey: '', syncTimer: null, playBtn: null
+  };
+  // 拖拽收尾 window 级兜底（捕获失效/拖出容器外松手不得卡在拖动态）——只挂一次
+  const endScrub = () => {
+    if (!radar.dragging) return;
+    radar.dragging = false;
+    document.body.classList.remove('r-scrubbing');
+    if (radar.syncTimer) radar.syncTimer();
+  };
+  window.addEventListener('pointerup', endScrub);
+  window.addEventListener('pointercancel', endScrub);
+  window.addEventListener('blur', endScrub);
+
   function tileXY(lat, lon, z) {
     const n = Math.pow(2, z);
     const x = Math.floor((lon + 180) / 360 * n);
@@ -490,17 +507,49 @@
     return { x, y };
   }
   async function ensureRadar(loc) {
-    if (radar.frames || !loc) return;
+    if (!loc) return;
+    const locKey = loc.lat + ',' + loc.lon;
+    // 帧列表 4 分钟内不重建 DOM（保住时间轴交互态）；地点变了必须重画
+    if (radar.frames && radar.locKey === locKey && Date.now() - radar.ts < 4 * 60 * 1000) return;
     const meta = await sky.radarFrames();
-    if (!meta) { renderRadar(null, loc); return; }
+    radar.ts = Date.now(); radar.locKey = locKey;
+    if (!meta) { if (!radar.frames) renderRadar(null, loc); return; }
     radar.frames = meta;
     renderRadar(meta, loc);
+  }
+  // — vivo 式雨情文案（分钟级 15min 汇总，数据缺省返回空串不占版面） —
+  function rainTipText() {
+    const w = window.__extraWeather;
+    const m = w && w.minutely_15;
+    if (!m || !m.time || !m.time.length || !m.precipitation) return '';
+    const now = new Date();
+    const p2 = v => String(v).padStart(2, '0');
+    const nowStr = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}T${p2(now.getHours())}:${p2(Math.floor(now.getMinutes() / 15) * 15)}`;
+    let idx = m.time.indexOf(nowStr);
+    if (idx < 0) idx = m.time.findIndex(t => t >= nowStr);
+    if (idx < 0) idx = 0;
+    const slots = [];
+    for (let i = idx; i < Math.min(idx + 8, m.time.length); i++) {
+      slots.push({ p: Number(m.precipitation[i]) || 0, code: Number(m.weather_code[i]) || 0 });
+    }
+    if (!slots.length) return '';
+    const isSnowCode = c => (c >= 70 && c <= 77) || c === 85 || c === 86;
+    const firstWet = slots.findIndex(s => s.p > 0.05);
+    if (firstWet === -1) return '未来两小时不会下雨，您可以放心出门~';
+    const snow = isSnowCode(slots[firstWet].code);
+    if (firstWet === 0) {
+      const stop = slots.findIndex((s, i) => i > 0 && s.p <= 0.05);
+      if (stop === -1) return snow ? '未来两小时持续下雪，注意防滑保暖~' : '未来两小时持续有雨，出门记得带伞~';
+      return snow ? `雪约 ${stop * 15} 分钟后停，注意防滑~` : `雨约 ${stop * 15} 分钟后停~`;
+    }
+    return snow ? `约 ${firstWet * 15} 分钟后开始下雪，注意保暖~` : `约 ${firstWet * 15} 分钟后有雨，出门记得带伞~`;
   }
   function renderRadar(meta, loc) {
     const el = $('modRadar');
     if (!el) return;
     const body = el.querySelector('.x-body');
     if (radar.timer) { clearInterval(radar.timer); radar.timer = null; }
+    radar.syncTimer = null; radar.playBtn = null;
     if (!meta || !meta.past || !meta.past.length || !loc) {
       body.innerHTML = '<div class="x-adv">降水雷达暂不可用（网络或服务限制）</div>';
       return;
@@ -513,6 +562,7 @@
     const fy = (1 - Math.log(Math.tan(la2) + 1 / Math.cos(la2)) / Math.PI) / 2 * n2 - t.y;
     const px = (1 + fx) * 256, py = (1 + fy) * 256;
     const all = meta.past.concat(meta.nowcast || []);
+    const nFrames = all.length, nPast = meta.past.length;
     // 卫星底图（高德 style=8 卫星+路网标注，合规白名单源）：3×3 瓦片铺底
     const sub = 'webst0' + (1 + Math.floor(Math.random() * 4));
     const base = [];
@@ -526,28 +576,104 @@
       }
       return `<div class="x-rlayer" data-fi="${i}">${tiles.join('')}</div>`;
     }).join('');
-    const lastTime = new Date((meta.past[meta.past.length - 1].time || 0) * 1000);
-    const hh = String(lastTime.getHours()).padStart(2, '0'), mm2 = String(lastTime.getMinutes()).padStart(2, '0');
+    // 时间轴刻度：每帧一格，标签隔 2 帧取一 + 恒有首尾；末标签距前一标签 <2 格时跳过前者（防叠字）
+    const fmtT = ts => { const d = new Date((ts || 0) * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+    const labelIdx = new Set([0]);
+    for (let i = 3; i < nFrames - 2; i += 3) labelIdx.add(i);
+    if (nFrames > 1) labelIdx.add(nFrames - 1);
+    const ticks = all.map((f, i) => {
+      const p = nFrames > 1 ? (i / (nFrames - 1)) * 100 : 50;
+      const major = labelIdx.has(i);
+      const anchor = i === 0 ? 'first' : (i === nFrames - 1 ? 'last' : '');
+      return `<i class="x-r-tick${major ? ' maj' : ''}" style="left:${p}%">${major ? `<b class="${anchor}">${fmtT(f.time)}</b>` : ''}</i>`;
+    }).join('');
+    const tip = rainTipText();
     body.innerHTML =
       `<div class="x-radar-view"><div class="x-radar-move" style="margin:${-py}px 0 0 ${-px}px"><div class="x-rlayer x-rbase">${base.join('')}</div>${layers}</div>
         <i class="x-radar-ring r1"></i><i class="x-radar-ring r2"></i><i class="x-radar-ring r3"></i>
         <i class="x-radar-sweep"></i>
         <i class="x-radar-me"></i><div class="x-attr">© 高德地图 · RainViewer</div></div>
-      <div class="x-adv">回波帧 ${hh}:${mm2} · ${all.length} 帧循环（10 分钟/帧，含外推）</div>`;
+      ${tip ? `<div class="x-r-tip">${esc(tip)}</div>` : ''}
+      <div class="x-r-bar">
+        <button type="button" class="x-r-play" data-rplay title="播放/暂停回波动画">❚❚</button>
+        <div class="x-r-tl" data-rscrub title="拖动查看各帧回波">
+          <div class="x-r-track"><div class="x-r-fill"></div>${ticks}<div class="x-r-knob"></div></div>
+        </div>
+      </div>
+      <div class="x-adv">回波帧 <b class="x-r-now"></b> · ${nFrames} 帧循环 · 10 分钟/帧</div>`;
     const layerEls = [...body.querySelectorAll('.x-rlayer:not(.x-rbase)')];
-    layerEls.forEach((l, i) => { l.style.opacity = i === layerEls.length - 1 ? 1 : 0; });
-    radar.idx = layerEls.length - 1;
-    // 静止判定与「动效」设置对齐（body.motion-quiet 由 applyMotion 统一驱动，含系统 reduce → system 模式）
-    const reduce = document.body.classList.contains('motion-quiet');
-    if (!reduce && layerEls.length > 1) {
+    const track = body.querySelector('.x-r-track');
+    const knob = body.querySelector('.x-r-knob');
+    const fill = body.querySelector('.x-r-fill');
+    const nowLab = body.querySelector('.x-r-now');
+    const playBtn = body.querySelector('[data-rplay]');
+    radar.playBtn = playBtn;
+
+    // 帧状态机：切帧只动 opacity/transform（合成层，零重绘）
+    const setFrame = i => {
+      const n = layerEls.length;
+      if (!n) return;
+      radar.idx = ((i % n) + n) % n;
+      layerEls.forEach((l, j) => { l.style.opacity = j === radar.idx ? 1 : 0; });
+      const pct = n > 1 ? radar.idx / (n - 1) : 0;
+      if (knob && track) knob.style.transform = `translateX(${(pct * track.clientWidth).toFixed(1)}px) translateX(-50%)`;
+      if (fill) fill.style.transform = `scaleX(${pct})`;
+      if (nowLab) nowLab.textContent = fmtT(all[radar.idx].time) + (radar.idx >= nPast ? '（外推）' : '');
+    };
+    // 播放循环（800ms × .6s opacity 交叉淡化：雨云移动肉眼可辨）
+    const quiet = () => document.body.classList.contains('motion-quiet');
+    const syncTimer = () => {
+      if (radar.timer) { clearInterval(radar.timer); radar.timer = null; }
+      const active = radar.playing && !radar.dragging && layerEls.length > 1 && (!quiet() || radar.userPlay);
+      if (playBtn) playBtn.textContent = active ? '❚❚' : '▶';
+      if (!active) return;
       radar.timer = setInterval(() => {
-        // tick 级守卫：运行中切到静止档立即停帧（不清 timer，切回即恢复）
-        if (document.body.classList.contains('motion-quiet')) return;
-        layerEls[radar.idx].style.opacity = 0;
-        radar.idx = (radar.idx + 1) % layerEls.length;
-        layerEls[radar.idx].style.opacity = 1;
-      }, 800); // 与 .x-rlayer 的 .6s opacity 过渡配合：帧间交叉淡化，雨云移动肉眼可辨
+        // tick 级守卫：运行中切到静止档立即停帧（用户显式点播则放行）
+        if (quiet() && !radar.userPlay) return;
+        setFrame(radar.idx + 1);
+      }, 800);
+    };
+    radar.syncTimer = syncTimer;
+
+    // 播放/暂停：显式手势，静止档下点播即同意动效
+    if (playBtn) playBtn.addEventListener('click', () => {
+      radar.playing = !radar.playing;
+      if (radar.playing) radar.userPlay = true;
+      syncTimer();
+    });
+
+    // 时间轴拖动（Pointer Events + setPointerCapture；竖拖让位页面滚屏——方向锁天然隔离）
+    const tl = body.querySelector('[data-rscrub]');
+    if (tl && layerEls.length > 1) {
+      let captured = false;
+      const idxFromX = x => {
+        const r = track.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (x - r.left) / Math.max(1, r.width)));
+        return Math.round(pct * (layerEls.length - 1));
+      };
+      tl.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        radar.dragging = true;
+        radar.playing = false;               // 拖动即暂停（与 vivo 一致），按钮可恢复
+        try { tl.setPointerCapture(e.pointerId); captured = true; } catch (err) { captured = false; }
+        document.body.classList.add('r-scrubbing'); // 拖动中关帧过渡：跟手不拖尾
+        setFrame(idxFromX(e.clientX));
+        syncTimer();
+      });
+      tl.addEventListener('pointermove', e => {
+        if (!radar.dragging) return;
+        // e.buttons 自愈仅在捕获失败时启用（合成输入/杂散 move 带 buttons=0 会误杀拖拽）
+        if (e.buttons === 0 && !captured) { endScrub(); return; }
+        setFrame(idxFromX(e.clientX));
+      });
+      tl.addEventListener('lostpointercapture', endScrub);
+      tl.addEventListener('pointercancel', endScrub);
     }
+
+    // 初始帧 = 最新（含外推尾帧），随后按播放态走
+    setFrame(nFrames - 1);
+    syncTimer();
   }
   // — 自定义提醒（规则引擎：模板内置，每条 6h 冷却防轰炸） —
   const ALERT_TPL = [
@@ -797,7 +923,7 @@
     const card = t.closest('.xcard[data-ext]');
     if (!card) return;
     // 交互控件/排序手柄上的点击是操作，不跳转（拖后那次 click 已被滚屏 kill 拦掉，到不了这里）
-    if (t.closest('a, button, input, textarea, select, label, .x-switch, .mod-handle, [data-cid], [data-addcity], [data-alert], [data-alertadd]')) return;
+    if (t.closest('a, button, input, textarea, select, label, .x-switch, .mod-handle, [data-cid], [data-addcity], [data-alert], [data-alertadd], [data-rscrub], [data-rplay]')) return;
     const build = EXT_LINKS[card.id];
     if (!build || !curLoc || !Number.isFinite(curLoc.lat) || !Number.isFinite(curLoc.lon)) return;
     const now = Date.now();

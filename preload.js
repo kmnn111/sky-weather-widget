@@ -4,10 +4,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('sky', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
-  fetchWeather: (lat, lon) => ipcRenderer.invoke('weather:get', { lat, lon }),
+  fetchWeather: (lat, lon, name, code) => ipcRenderer.invoke('weather:get', { lat, lon, name, code }),
   fetchArchive: (lat, lon) => ipcRenderer.invoke('weather:archive', { lat, lon }),
   radarFrames: () => ipcRenderer.invoke('radar:frames'),
-  cityCurrent: (lat, lon) => ipcRenderer.invoke('city:current', { lat, lon }),
+  cityCurrent: (lat, lon, name, code) => ipcRenderer.invoke('city:current', { lat, lon, name, code }),
   savePng: (dataURL) => ipcRenderer.invoke('png:save', dataURL),
   geoSearch: (q) => ipcRenderer.invoke('geo:search', q),
   geoReverse: (lat, lon, fallbackName) => ipcRenderer.invoke('geo:reverse', { lat, lon, fallbackName }),
