@@ -306,6 +306,12 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
   content-visibility: auto;
   contain-intrinsic-size: auto 360px;
 }
+/* 吸顶收起期间 #widget 整体 visibility:hidden，跳过渲染区块的「记住尺寸」会被清成 0 高，
+   展开后 0 高盒子永不 reveal、页尾区块滚动够不着（2026-11-03 实测）——dock 期间强制真实布局 */
+body.docked #widget > section,
+body.docked #widget > .foot {
+  content-visibility: visible;
+}
 .card-title {
   display: flex; align-items: center; gap: 7px;
   font-size: 13.5px; color: var(--ink); font-weight: 500;
@@ -1394,18 +1400,23 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
   to { transform: translate3d(12px, -14px, 0); }
 }
 
-/* ---- ③ 风力：流线飘移 + 罗盘（风越大流线越快） ---- */
+/* ---- ③ 风力：气流柔痕轻飘 + 罗盘（风越大飘得越快） ----
+   旧版是 repeating-linear-gradient 白竖条整片平移，观感是「矩形条从左往右扫」，
+   与模块语义无关也与邻卡柔块风格格格不入（用户反馈）——换成椭圆柔光痕，水彩气流感 */
 .x-wind { background: linear-gradient(160deg, rgba(218, 238, 254, 0.95), rgba(192, 222, 250, 0.88)); }
 .x-wind::after {
-  content: ''; position: absolute; top: 0; bottom: 0; left: -80%; width: 160%;
-  background-image: repeating-linear-gradient(90deg, transparent 0 26px, rgba(255, 255, 255, 0.7) 26px 34px, transparent 34px 62px);
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 25% 75%, transparent);
-          mask-image: linear-gradient(180deg, transparent, #000 25% 75%, transparent);
-  opacity: .7;
-  animation: x-flow 6s linear infinite;
-  pointer-events: none;
+  content: ''; position: absolute; inset: -18% -36%; pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 120px 12px at 22% 30%, rgba(255, 255, 255, 0.55), transparent 70%),
+    radial-gradient(ellipse 88px 9px at 62% 52%, rgba(255, 255, 255, 0.42), transparent 70%),
+    radial-gradient(ellipse 140px 11px at 84% 22%, rgba(255, 255, 255, 0.36), transparent 72%),
+    radial-gradient(ellipse 72px 8px at 42% 76%, rgba(255, 255, 255, 0.32), transparent 70%);
+  animation: x-flow 6s ease-in-out infinite alternate;
 }
-@keyframes x-flow { to { transform: translateX(62px); } }
+@keyframes x-flow {
+  from { transform: translate3d(-12px, 5px, 0); }
+  to { transform: translate3d(16px, -7px, 0); }
+}
 .x-wind.lv1::after { animation-duration: 11s; opacity: .5; }
 .x-wind.lv2::after { animation-duration: 8.5s; opacity: .58; }
 .x-wind.lv3::after { animation-duration: 6s; }
@@ -1443,17 +1454,18 @@ body.night .alm-hours::-webkit-scrollbar-thumb { background: rgba(180, 196, 232,
 .x-visib.lv1::after { animation-duration: 4.6s; }
 .x-visib.lv2::after { animation-duration: 5.6s; }
 
-/* ---- ⑤ 穿衣：晾衣绳小衣服随风轻摆（iOS 弹性摆动） ---- */
+/* ---- ⑤ 穿衣：晾衣绳小衣服随风轻摆（iOS 弹性摆动） ----
+   旧版背景是 118° 斜条纹整片平移（x-rays），同样是「矩形条扫过」观感（用户反馈）——
+   换成静止暖柔光晕只做 opacity 呼吸，零位移，视觉焦点还给小衣服 */
 .x-dress { background: linear-gradient(160deg, rgba(240, 234, 254, 0.95), rgba(224, 214, 250, 0.88)); }
 .x-dress::after {
   content: ''; position: absolute; inset: -30% -50%; pointer-events: none;
-  background: repeating-linear-gradient(118deg, transparent 0 30px, rgba(255, 255, 255, 0.5) 30px 46px);
-  animation: x-rays 7.5s ease-in-out infinite alternate;
+  background:
+    radial-gradient(58% 80% at 82% 12%, rgba(255, 255, 255, 0.6), transparent 62%),
+    radial-gradient(46% 66% at 10% 92%, rgba(255, 216, 238, 0.42), transparent 66%);
+  animation: x-glow 5.2s ease-in-out infinite alternate;
 }
-@keyframes x-rays {
-  from { transform: translateX(-46px); }
-  to { transform: translateX(46px); }
-}
+@keyframes x-glow { from { opacity: .55; } to { opacity: 1; } }
 .x-cloth { /* 小衣服（纯 CSS 剪影） */
   position: absolute; right: 13px; top: 42px; width: 30px; height: 34px;
   transform-origin: 50% -8px;

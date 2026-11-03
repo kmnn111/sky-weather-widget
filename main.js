@@ -305,6 +305,8 @@ function collapseDock() {
 /* 拖拽结束：距顶端够近 → 吸顶收起；吸顶态拖离 → 恢复完整插件 */
 function checkSnap() {
   if (!win || win.isDestroyed()) return;
+  // 最小化时窗口飞到屏外 (-32000)，b.y - wa.y 恒「贴顶」会把最小化误判成吸顶反手 dock
+  if (win.isMinimized()) return;
   if (Date.now() - programmatic < 600) return;
   if (settings.edgeDock === false) {
     if (settings.docked) undockWindow();
@@ -627,6 +629,25 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
+  /* 吸顶小窗常驻桌面（用户反馈：点「显示桌面」小窗被一起最小化带走）。
+     系统级最小化（Win+D / Win+M / 任务栏「显示桌面」）是唯一能让本窗最小化的入口
+     （skipTaskbar+无边框，没有最小化按钮），故 docked 态拦截 minimize 原地恢复即可；
+     大窗态保持系统正常行为（该最小化就最小化）。恢复用 showInactive 不抢焦点，
+     用户仍停留在桌面；置顶层级/形状在恢复后重申一次（最小化可能掉档）。 */
+  const undoMinimize = () => {
+    if (!win || win.isDestroyed() || !settings.docked) return;
+    if (!win.isMinimized()) return;
+    try { win.showInactive(); } catch (e) { try { win.restore(); } catch (e2) { } }
+    try { win.moveTop(); } catch (e3) { }
+    try { win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating'); } catch (e4) { }
+    if (settings.docked && !dockExpanded) setShapePill();
+  };
+  win.on('minimize', () => {
+    if (!settings.docked) return;
+    setImmediate(undoMinimize);        // 最小化事件后立即拉回
+    setTimeout(undoMinimize, 40);      // 系统最小化动画期间再兜一次（事件时序竞争）
+    setTimeout(undoMinimize, 250);
+  });
   // shot 自检：加载前清一次 HTTP 缓存，防止 file:// 的 styles.css 等被磁盘缓存住（改动看似不生效）
   if (SHOT_MODE) { try { win.webContents.session.clearCache().catch(() => { }); } catch (e) { } }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -679,8 +700,8 @@ function createWindow() {
           console.log('[shot]', name, 'scrollTop=', real);
           await shoot(name);
         }
-        // 四联扩展卡取景（跟元素定位自适应）：real/life4 一帧、climate/play 一帧，目检 16 卡渲染
-        for (const [name, anchor] of [['shot-q1-quads.png', 'modQuadReal'], ['shot-q2-quads.png', 'modQuadClimate']]) {
+        // 四联扩展卡取景（跟元素定位自适应）：real/life4/climate 各一帧，目检 16 卡渲染
+        for (const [name, anchor] of [['shot-q1-quads.png', 'modQuadReal'], ['shot-q-life4-quads.png', 'modQuadLife4'], ['shot-q2-quads.png', 'modQuadClimate']]) {
           await win.webContents.executeJavaScript(`(() => { const w = document.getElementById("widget"), t = document.getElementById("${anchor}"); w.scrollTop += t.getBoundingClientRect().top - w.getBoundingClientRect().top - 16; })()`);
           await new Promise(r => setTimeout(r, 700));
           await shoot(name);
@@ -714,6 +735,15 @@ function createWindow() {
         })()`);
         const dragYOk = dragY.top > 100 && dragY.sb === 'none';
         console.log('[dragY-test] vertical-drag + hidden-scrollbar', JSON.stringify(dragY), dragYOk ? 'PASS' : 'FAIL');
+        // 滚轮单格步长自检：经典一格 deltaY=120 → 映射 ~66px（旧 120px 大跳已废），等惯性收尾再量
+        const wheelRes = await win.webContents.executeJavaScript(`(() => {
+          const w = document.getElementById('widget');
+          w.scrollTop = 0;
+          w.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true }));
+          return new Promise(r => setTimeout(() => r({ top: Math.round(w.scrollTop) }), 900));
+        })()`);
+        const wheelOk = wheelRes.top > 40 && wheelRes.top < 90;
+        console.log('[wheel-test] one-notch ~66px', JSON.stringify(wheelRes), wheelOk ? 'PASS' : 'FAIL');
         // ---- v1.0.15 新增自检：夜色主题 / IME 搜索守卫 / 设置页更新按钮 ----
         // 夜色主题：白天跑 --shot 也能验证夜间版式（强制 body.night 抓帧后还原）
         await win.webContents.executeJavaScript('document.body.classList.add("night")');
@@ -900,17 +930,25 @@ function createWindow() {
         // ---- v1.0.23 自检：雷达卡 vivo 式时间轴（sendInputEvent 真实拖动 + 播放/暂停 + 雨情文案） ----
         // 放在模块开关/排序测试之前：applyModules 重建会清掉 content-visibility:auto 的记住尺寸，
         // scrollHeight 缩水会让页底卡片够不着（一次性大跳滚动会被占位尺寸 clamp）。
-        // 滚动用迭代式：每跳一段等 content-visibility 重新渲染、scrollHeight 长回来再跳。
-        for (let i = 0; i < 6; i++) {
-          const d = await win.webContents.executeJavaScript(`(() => {
-            const w = document.getElementById("widget"), t = document.getElementById("modRadar");
-            const delta = t.getBoundingClientRect().top - w.getBoundingClientRect().top - 16;
+        // 取景直接对准时间轴轨道中心（交互目标）；rect.height=0（区块未渲染）按 700px 步进下探逼它渲染。
+        let prevSt = -1, jumps = 0;
+        for (let i = 0; i < 14; i++) {
+          const j = JSON.parse(await win.webContents.executeJavaScript(`(() => {
+            const w = document.getElementById("widget");
+            const t = document.querySelector('#modRadar [data-rscrub] .x-r-track');
+            const r = t.getBoundingClientRect(), wr = w.getBoundingClientRect();
+            if (!r.height) { w.scrollTop += 700; return JSON.stringify({ d: 9999, st: Math.round(w.scrollTop) }); }
+            const delta = Math.round((r.top + r.height / 2) - (wr.top + wr.height / 2));
             if (Math.abs(delta) > 2) w.scrollTop += delta;
-            return Math.round(delta);
-          })()`);
-          if (Math.abs(d) <= 2) break;
-          await new Promise(r => setTimeout(r, 350));
+            return JSON.stringify({ d: delta, st: Math.round(w.scrollTop) });
+          })()`));
+          jumps++;
+          // 到位退出 / 已到滚动极限退出（目标中心偶尔落在 maxTop 之外，|d|<=2 永远够不着）
+          if (Math.abs(j.d) <= 2 || j.st === prevSt) break;
+          prevSt = j.st;
+          await new Promise(r => setTimeout(r, 400));
         }
+        console.log('[radar-test] frame-jump', jumps, 'jumps');
         await new Promise(r => setTimeout(r, 500));
         await shoot('shot-q3-radar.png');
         const rt0 = JSON.parse(await win.webContents.executeJavaScript(`(() => {
@@ -930,6 +968,8 @@ function createWindow() {
           const t = document.querySelector('#modRadar [data-rscrub] .x-r-track').getBoundingClientRect();
           return JSON.stringify({ left: Math.round(t.left + 4), right: Math.round(t.right - 4), midY: Math.round(t.top + t.height / 2) });
         })()`));
+        const viewH = await win.webContents.executeJavaScript('window.innerHeight');
+        console.log('[radar-test] scrub-coords', JSON.stringify({ tl, viewH }), (tl.right - tl.left > 40 && tl.midY > 10 && tl.midY < viewH - 10) ? 'IN-VIEW' : 'OUT-OF-VIEW');
         await win.webContents.sendInputEvent({ type: 'mouseMove', x: tl.right, y: tl.midY });
         await win.webContents.sendInputEvent({ type: 'mouseDown', x: tl.right, y: tl.midY, button: 'left', clickCount: 1 });
         for (let i = 1; i <= 5; i++) {
@@ -1340,10 +1380,21 @@ function createWindow() {
         await new Promise(r => setTimeout(r, 800));
         const bx2 = win.getBounds().x;
         check('drag-base-reset', bx2 - bx === 300, `dx=${bx2 - bx}`);
+        // 5. 显示桌面保活：docked 态被系统最小化（Win+D 同链路 win.minimize）→ 必须自动恢复常驻
+        win.minimize();
+        await new Promise(r => setTimeout(r, 800)); // 等 undoMinimize 三连兜底跑完
+        check('minimize-keep-docked', !win.isMinimized(), `docked=${settings.docked} minimized=${win.isMinimized()}`);
+        // 6. 大窗态保持系统正常行为：非 docked 态最小化必须保持最小化（不被误拉回）
+        undockWindow();
+        await new Promise(r => setTimeout(r, 400));
+        win.minimize();
+        await new Promise(r => setTimeout(r, 800));
+        check('minimize-normal-undocked', win.isMinimized(), `docked=${settings.docked} minimized=${win.isMinimized()}`);
+        win.restore(); // 复位，别把最小化态留在屏幕上
       } catch (e) { console.error('[dock-test] failed', e); check('exception', false, String((e && e.message) || e)); }
       // 还原设置（不污染用户的位置记忆）
       try { settings.docked = saved.docked; settings.dockX = saved.dockX; settings.winPos = saved.winPos; persist({ docked: saved.docked, dockX: saved.dockX, winPos: saved.winPos }); } catch (e) { }
-      console.log('[dock-test] DONE', (passes.length === 5 && passes.every(Boolean)) ? 'PASS' : 'FAIL');
+      console.log('[dock-test] DONE', (passes.length === 7 && passes.every(Boolean)) ? 'PASS' : 'FAIL');
       app.exit(0);
     }, 1500);
   }
@@ -1354,6 +1405,8 @@ function createWindow() {
     saveTimer = setTimeout(() => {
       if (!win || win.isDestroyed()) return;
       if (Date.now() - programmatic < 600) return;
+      // 最小化时 bounds 是 -32000 垃圾值：不能落盘（重启后窗飞出屏）也不能纠尺寸（会把窗口拉回屏上）
+      if (win.isMinimized()) return;
       const b = win.getBounds();
       // 系统（DPI 切换 / 吸附 / 休眠恢复等）可能擅改窗口尺寸：
       // 立即纠回基准尺寸（只保位置），坏尺寸绝不落盘固化

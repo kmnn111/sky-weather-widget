@@ -511,13 +511,28 @@
     for (const k of MOD_ORDER_DEFAULT) if (!out.includes(k)) out.push(k);
     return out;
   }
+  /* content-visibility:auto「0 高卡死」自愈（2026-11-03）：跳过渲染区块的「记住尺寸」被清零后
+     （吸顶收起/展开把 #widget 整体 visibility:hidden 期间实测会把跳过区块记住 0 高），
+     0 高盒子永不再触发 reveal（空矩形不与视口相交）→ 页尾区块滚动永远够不着、页面像被截断。
+     发现「有内容却 0 高」的区块就永久放开 content-visibility（强制真实布局），一次修复不再复发。 */
+  function repairZeroSections() {
+    for (const sec of document.querySelectorAll('#widget > section, #widget > .foot')) {
+      if (sec.firstElementChild && sec.getBoundingClientRect().height === 0) {
+        sec.style.contentVisibility = 'visible';
+      }
+    }
+  }
   function applyOrder() {
     const parent = $('modGlobe') && $('modGlobe').parentElement;
     if (!parent) return;
+    // 必须插在页尾脚注之前：直接 appendChild 会把 9 个模块甩到 .foot 之后，
+    // 脚注跑到模块上方（2026-11-03 实测布局 dump 抓到 foot 在模块前）
+    const sentinel = parent.querySelector(':scope > .foot') || null;
     for (const k of modOrder()) {
       const el = $(MOD_NODE[k]);
-      if (el) parent.appendChild(el); // 按序 append 即重排，9 个节点开销可忽略
+      if (el) parent.insertBefore(el, sentinel); // 按序 insert 即重排，9 个节点开销可忽略
     }
+    repairZeroSections();
   }
   function initModSort() {
     const list = $('modSort');
@@ -653,6 +668,7 @@
     if (s.docked && !s.expanded) renderPill();
     FX.setSuspended(!!s.docked && !s.expanded); // 收起为小窗时粒子画布隐藏 → 暂停动画循环
     if (window.Globe) Globe.setSuspended(!!s.docked && !s.expanded); // 昼夜地球同步暂停
+    repairZeroSections(); // 收起/展开是「记住尺寸」清零的实测触发点，状态一变就自检
   }
 
   function renderAll() {
@@ -1108,25 +1124,34 @@
   function markScrolling(el) {
     if (!el.classList.contains('scrolling')) el.classList.add('scrolling');
     clearTimeout(el._scrollEndTimer);
-    el._scrollEndTimer = setTimeout(() => el.classList.remove('scrolling'), 180);
+    el._scrollEndTimer = setTimeout(() => {
+      el.classList.remove('scrolling');
+      if (el.id === 'widget') repairZeroSections(); // 滚动停顿顺手自检 0 高卡死区块
+    }, 180);
   }
 
   function initSmoothScroll(el) {
     if (!el) return;
-    let target = el.scrollTop, animating = false, raf = 0;
+    let target = el.scrollTop, animating = false, raf = 0, selfTop = -1, lastStep = 0;
     const EASE = 0.18;
     const maxTop = () => Math.max(0, el.scrollHeight - el.clientHeight);
 
-    function step() {
+    function step(now) {
       raf = 0;
+      // rAF 被系统掐断（窗口遮挡/降频）再恢复时惯性上下文已过期：放弃本轮插值，
+      // 否则会按冻结的旧 target 把视图拽回去
+      if (lastStep && now - lastStep > 250) { animating = false; target = el.scrollTop; return; }
+      lastStep = now;
       if (target > maxTop()) target = maxTop();   // content-visibility 让 scrollHeight 动态变化，逐帧钳制
       const cur = el.scrollTop;
       const next = cur + (target - cur) * EASE;
       if (Math.abs(target - cur) < 0.6) {
+        selfTop = target;
         el.scrollTop = target;
         animating = false;
         return;
       }
+      selfTop = next;
       el.scrollTop = next;
       markScrolling(el);
       raf = requestAnimationFrame(step);
@@ -1136,16 +1161,30 @@
       if (e.ctrlKey) return;                        // Ctrl+滚轮缩放交还原生
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // 横向手势（逐时横滑）不拦截
       e.preventDefault();
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
+      // 行模式一格 3 行折算 120（与像素模式一格同权重）；页模式按 clientHeight
+      const raw = e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientHeight : 1);
+      // 经典滚轮一格 = ±120px 直接跳太猛（用户反馈「一格跳很多距离」）：
+      // 0.55 缩放 + 72px 封顶 → 一格 ~66px（约 3 行，贴近系统默认手感）；
+      // 高精度触控板小 delta 线性缩放保跟手连续性；翻页模式不封顶
+      const d = e.deltaMode === 2 ? raw * 0.85
+        : Math.sign(raw) * Math.min(Math.abs(raw) * 0.55, 72);
       if (!animating) target = el.scrollTop;
-      target = Math.min(maxTop(), Math.max(0, target + e.deltaY * unit));
+      target = Math.min(maxTop(), Math.max(0, target + d));
       markScrolling(el);
-      if (!animating) { animating = true; raf = requestAnimationFrame(step); }
+      if (!animating) {
+        animating = true; lastStep = 0;
+        selfTop = el.scrollTop; // 认领当前位置：吸收起动前迟到的 scroll 事件，别误杀刚起步的动画
+        raf = requestAnimationFrame(step);
+      }
     }, { passive: false });
 
-    // 外部滚动（滚动条拖动 / 键盘 / 查找定位）→ 同步惯性目标，避免两套滚动打架
+    // 外部滚动（脚本 / 滚动条拖动 / 键盘 / 查找定位）→ 取消惯性并接管目标，
+    // 避免惯性循环把视图往旧 target 拽。只有 step 自己写入的 scroll 事件才放行。
     el.addEventListener('scroll', () => {
-      if (!animating) target = el.scrollTop;
+      if (animating && selfTop >= 0 && Math.abs(el.scrollTop - selfTop) < 1.5) { markScrolling(el); return; }
+      animating = false;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      target = el.scrollTop;
       markScrolling(el);
     }, { passive: true });
   }
@@ -1225,7 +1264,7 @@
       const bl = parseFloat(cs.borderLeftWidth) || 0, bt = parseFloat(cs.borderTopWidth) || 0;
       if (e.clientX - r.left - bl >= el.clientWidth || e.clientY - r.top - bt >= el.clientHeight) return;
       const t = e.target;
-      if (t.closest && t.closest('.drag, .mod-handle, #globeMount, #gBarWrap, input, textarea, select, button, a, label')) return;
+      if (t.closest && t.closest('.drag, .mod-handle, #globeMount, #gBarWrap, input, textarea, select, button, a, label, [data-rscrub]')) return;
       down = true; axis = ''; moved = false;
       startX = e.clientX; startY = lastY = e.clientY; startTop = el.scrollTop;
       lastT = performance.now(); vel = 0;

@@ -65,16 +65,19 @@ const check = (name, cond, extra) => {
     check('norm-city', r.city === '慈溪' && r.code === '101210403', { city: r.city, code: r.code });
   }
 
-  /* ⑥ mergeCn 覆盖合并 + 日期对齐 + 降级 */
+  /* ⑥ mergeCn 覆盖合并 + 日期对齐 + 降级
+     fixture 首日必须取 r.daily.time[0]（真实 CN 预报日期）：硬编码日期只在写测试当天
+     能命中对齐，隔天就 FAIL（byDate 精确匹配落空 → daily 来源标记回 Open-Meteo）。 */
+  const day0 = r && r.daily ? r.daily.time[0] : '2026-11-02';
   const w = {
     current: { temperature_2m: 99, weather_code: 71, is_day: 0, apparent_temperature: 5 },
-    daily: { time: ['2026-11-02', '2029-01-01'], weather_code: [1, 1], temperature_2m_max: [1, 1], temperature_2m_min: [0, 0], sunrise: ['a', 'b'], sunset: ['x', 'y'] }
+    daily: { time: [day0, '2029-01-01'], weather_code: [1, 1], temperature_2m_max: [1, 1], temperature_2m_min: [0, 0], sunrise: ['a', 'b'], sunset: ['x', 'y'] }
   };
   const air = { current: { pm2_5: 999, pm10: 999, ozone: 80 } };
   const s = cn.mergeCn(w, air, r);
   check('merge-sources', s.current === '中国天气网' && s.daily === '中国天气网' && s.air === '中国天气网 + Open-Meteo' && s.hourly === 'Open-Meteo', s);
   check('merge-current', w.current.temperature_2m !== 99 && w.current.apparent_temperature === 5, w.current);
-  check('merge-date-align', w.daily.time[0] === '2026-11-02' && w.daily.sunrise[0] !== 'a' && w.daily.sunrise[1] === 'b', w.daily);
+  check('merge-date-align', w.daily.time[0] === day0 && w.daily.sunrise[0] !== 'a' && w.daily.sunrise[1] === 'b', w.daily);
   check('merge-air-pm', air.current.pm2_5 !== 999 && air.current.ozone === 80, air.current);
   const w2 = { current: { temperature_2m: 1 } };
   const s2 = cn.mergeCn(w2, null, null);
