@@ -217,13 +217,90 @@ function setShapeFull() {
 /* #70 真相（探针实锤）：explorer「显示桌面」（Win+D / 任务栏右下角小竖条）对 skipTaskbar 工具窗
    既不最小化也不发 minimize 事件，而是把全屏壁纸 WorkerW 从 z 序底部跃升到普通窗口带顶端——
    非 topmost 的小窗必被壁纸盖住（窗口仍「健康」：visible/on-screen/printwin 完好，但用户看不见）。
-   topmost 带的窗口天然免疫：壁纸只跃到 topmost 带之下（实测 meIdx=15/16 时壁纸在 142 下方）。
-   故吸顶小窗恒 topmost('screen-saver')，兑现「常驻桌面最上层不消失」；大窗态仍按用户置顶偏好走。 */
+   ── 桌面部件语义（置顶关时）：小窗钉在「壁纸层」正上方——平时贴 z 序底部（所有程序窗口之下），
+   「显示桌面」壁纸跃升时跟着浮到最上（壁纸之上），全程不挡任何程序（用户实测反馈：不许压浏览器）。
+   交互手感保留：小窗被点聚焦 / 展开时允许自然置前，失焦/收起即归位；壁纸可见（桌面态）时强制钉住。
+   ── 置顶开时：topmost('screen-saver') 带天然免疫壁纸跃升，浮最上层即用户所愿。
+   大窗态一律按用户置顶偏好走（保持系统正常行为）。 */
+let glueTimer = null, glueU32 = null;
+function glueInit() {
+  if (glueU32) return glueU32;
+  try {
+    const koffi = require('koffi');
+    const u = koffi.load('user32.dll');
+    glueU32 = {
+      getDesktop: u.func('void *GetDesktopWindow()'),
+      getWindow: u.func('void *GetWindow(void *h, uint cmd)'),
+      getClassName: u.func('int GetClassNameW(void *h, uint16 *buf, int max)'),
+      getRect: u.func('bool GetWindowRect(void *h, void *rect)'),
+      isVisible: u.func('bool IsWindowVisible(void *h)'),
+      findChild: u.func('void *FindWindowExW(void *p, void *after, str16 cls, str16 name)'),
+      setPos: u.func('bool SetWindowPos(void *h, void *after, int x, int y, int cx, int cy, uint flags)'),
+      isWindow: u.func('bool IsWindow(void *h)')
+    };
+  } catch (e) { glueU32 = null; }
+  return glueU32;
+}
+/* 壁纸层定位：全屏 WorkerW（唯一恒定特征：class=WorkerW、w>1200、h>700）。
+   实测（probe-setpos Win+D diff）：该窗常态沉在 z 序底（无 DefView、不可见）；explorer Toggle Desktop
+   （Win+D / 任务栏小竖条）把它「带 SHELLDLL_DefView」跃升到普通窗口带顶端盖一切——注意跃升后它「有」
+   DefView（图标层搬进去了），按无 DefView 过滤会永远找不到跃升层（v1.0.26 前的坑）！
+   每 tick 重扫、不缓存句柄（跃升=换位+变形，缓存必失手）；自顶向下扫描、上限 2000（本机实测顶层窗口
+   1145 个，旧「自底向上 n<300」在跃升态根本扫不到目标）。可见者取最靠上（跃升态）；全不可见取最靠下（常态）。 */
+function glueWallpaper() {
+  const A = glueInit(); if (!A) return null;
+  let p = A.getWindow(A.getDesktop(), 5), n = 0; // GW_CHILD：自顶向下
+  const seen = new Set();
+  const nameBuf = Buffer.alloc(256);
+  let visBest = null, hidBest = null;
+  while (p && p !== 0n && n < 2000) {
+    const s = String(p); if (seen.has(s)) break; seen.add(s);
+    const len = A.getClassName(p, nameBuf, 128);
+    if (nameBuf.subarray(0, len * 2).toString('utf16le') === 'WorkerW') {
+      const r = Buffer.alloc(16); A.getRect(p, r);
+      const w = r.readInt32LE(8) - r.readInt32LE(0), h = r.readInt32LE(12) - r.readInt32LE(4);
+      if (w > 1200 && h > 700) {
+        if (A.isVisible(p)) { if (!visBest) visBest = p; } // 第一个可见 = 最靠上（跃升壁纸层）
+        else hidBest = p;                                  // 最后写入 = 最靠下（常态壁纸层）
+      }
+    }
+    p = A.getWindow(p, 2); n++; // GW_HWNDNEXT 向 z 序下方
+  }
+  return visBest || hidBest;
+}
+function glueTick() {
+  const A = glueInit(); if (!A || !win || win.isDestroyed()) return;
+  const W = glueWallpaper(); if (!W) return; // 找不到壁纸层（异形系统）→ 退回自然 z 序，不硬抬
+  const wallUp = A.isVisible(W);
+  // 常态下交互放行（聚焦/展开允许自然置前，v1.0.24 手感）；壁纸可见=桌面态必须钉住（#70）
+  if (!wallUp && (win.isFocused() || dockExpanded)) return;
+  const hw = win.getNativeWindowHandle().readBigUInt64LE(0);
+  // 目标态：小窗紧贴壁纸层「上方」（其下邻=壁纸层）。
+  // SetWindowPos(A, B) 是把 A 插到 B【下方】（probe-setpos 实锤）——要插壁纸层上方须用「壁纸层的上邻」做锚；
+  // W 已是链顶时上邻为 NULL(=HWND_TOP)，仍在 W 上方。旧代码直接以 W 为锚+检查上邻，方向全反（小窗被钉壁纸之下）。
+  if (A.getWindow(hw, 2) !== W) {
+    const anchor = A.getWindow(W, 3) || 0n;
+    A.setPos(hw, anchor, 0, 0, 0, 0, 0x1B); // SWP_NOSIZE|NOMOVE|NOSENDCHANGING|NOACTIVATE
+  }
+}
+function setGlue(on) {
+  if (on) {
+    if (!glueTimer) glueTimer = setInterval(glueTick, 100);
+    glueTick();
+  } else if (glueTimer) {
+    clearInterval(glueTimer); glueTimer = null;
+  }
+}
 function applyTopmost() {
   if (!win || win.isDestroyed()) return;
   try {
-    if (settings.docked) win.setAlwaysOnTop(true, 'screen-saver');
-    else win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
+    if (settings.docked && settings.alwaysOnTop) {
+      win.setAlwaysOnTop(true, 'screen-saver'); // 置顶用户：浮最上层，「显示桌面」天然免疫
+      setGlue(false);
+    } else {
+      win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
+      setGlue(!!settings.docked && !settings.alwaysOnTop); // 桌面部件：钉壁纸层上沿
+    }
   } catch (e) { }
 }
 function sendDockState() {
@@ -662,6 +739,7 @@ function createWindow() {
     setTimeout(undoMinimize, 40);      // 系统最小化动画期间再兜一次（事件时序竞争）
     setTimeout(undoMinimize, 250);
   });
+  win.on('closed', () => setGlue(false));
   // shot 自检：加载前清一次 HTTP 缓存，防止 file:// 的 styles.css 等被磁盘缓存住（改动看似不生效）
   if (SHOT_MODE) { try { win.webContents.session.clearCache().catch(() => { }); } catch (e) { } }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -1352,8 +1430,10 @@ function createWindow() {
     setTimeout(async () => {
       const passes = [];
       const check = (name, ok, detail) => { passes.push(!!ok); console.log('[dock-test]', name, detail, ok ? 'PASS' : 'FAIL'); };
-      const saved = { winPos: settings.winPos ? JSON.parse(JSON.stringify(settings.winPos)) : null, dockX: settings.dockX, docked: settings.docked };
+      const saved = { winPos: settings.winPos ? JSON.parse(JSON.stringify(settings.winPos)) : null, dockX: settings.dockX, docked: settings.docked, alwaysOnTop: settings.alwaysOnTop };
       try {
+        // #70 用户真实配置：置顶关 → 吸顶小窗走「桌面部件贴附」路径（压程序窗口后、显示桌面浮出）
+        settings.alwaysOnTop = false; applyTopmost();
         const pillXOf = (b) => b.x + Math.round((baseSize.w - PILL_W) / 2); // 小窗屏幕 x（形状相对窗口，随窗口平移）
         // 0. 退出吸顶 → 定位到已知坐标 → 拖到顶部吸附（真实业务入口 dockWindow）
         undockWindow();
@@ -1452,63 +1532,7 @@ $g.Dispose();$bmp.Dispose()`).toString();
         check('show-desktop-click-gesture', helper.isMinimized(), `helperMin=${helper.isMinimized()}（正对照：手势必须真触发）`);
         check('show-desktop-click-keep', !win.isMinimized() && bc.x > -2000 && bc.y > -2000,
           `minimized=${win.isMinimized()} bounds=${bc.x},${bc.y} minEvents=${minEvents}`);
-        // 5c-probe：诊断「显示桌面」到底怎么把小窗弄没的（z 序被盖 / DWM cloak / 掉置顶）
-        const probe1 = psRun(`Add-Type 'using System;using System.Text;using System.Runtime.InteropServices;public class W{[DllImport("user32.dll")]public static extern bool IsWindowVisible(IntPtr h);[DllImport("user32.dll")]public static extern int GetWindowLong(IntPtr h,int n);[DllImport("dwmapi.dll")]public static extern int DwmGetWindowAttribute(IntPtr h,int a,out int v,int s);[DllImport("user32.dll")]public static extern IntPtr GetWindow(IntPtr h,int c);[DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern int GetClassName(IntPtr h,StringBuilder s,int n);}'
-$h=[IntPtr]${HWNDS}
-$vis=[W]::IsWindowVisible($h)
-$ex=[W]::GetWindowLong($h,-20)
-$cloak=0;[void][W]::DwmGetWindowAttribute($h,14,[ref]$cloak,4)
-$chain=@();$p=[W]::GetWindow($h,3)
-while($p -ne [IntPtr]::Zero -and $chain.Count -lt 6){$sb=New-Object System.Text.StringBuilder 128;[void][W]::GetClassName($p,$sb,128);$chain+=$sb.ToString();$p=[W]::GetWindow($p,3)}
-"vis=$vis ex=0x$($ex.ToString('X')) topmost=$(($ex -band 0x8) -ne 0) cloak=$cloak above=[$($chain -join '>')]"`).toString().trim();
-        console.log('[dock-test] desk-probe', probe1);
         await shotDesk('desk-after-click.png');
-        // 5c-recover：置顶重申能否把小窗从桌面层下捞回来
-        try { win.setAlwaysOnTop(true, 'screen-saver'); } catch (e) { }
-        try { win.moveTop(); } catch (e) { }
-        await new Promise(r => setTimeout(r, 400));
-        await shotDesk('desk-after-recover.png');
-        try { win.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating'); } catch (e) { }
-        // 5c-rawraise：裸 Win32 HWND_TOPMOST 抬升（排除 Electron moveTop 没真正抬的嫌疑）
-        await psRunAsync(`Add-Type 'using System;using System.Runtime.InteropServices;public class R{[DllImport("user32.dll")]public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int cx,int cy,uint f);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);}'
-$h=[IntPtr]${HWNDS}
-[void][R]::SetWindowPos($h,[IntPtr](-1),0,0,0,0,0x43)
-[void][R]::SetForegroundWindow($h)
-'raw-raised'`);
-        await new Promise(r => setTimeout(r, 400));
-        await shotDesk('desk-after-rawraise.png');
-        // 5c-discriminate：判别「被壁纸盖住」vs「渲染层没画内容」
-        const cap = await win.webContents.capturePage();
-        fs.writeFileSync(path.join(tmp, 'pill-content.png'), cap.toPNG()); // 窗口自身内容（与 z 序无关）
-        try { win.focus(); } catch (e) { }
-        try { win.moveTop(); } catch (e) { }
-        await new Promise(r => setTimeout(r, 400));
-        await shotDesk('desk-after-focus.png');
-        // 5c-matrix：SetParent 挂桌面（Rainmeter 技术）实验——Progman / WorkerW 两种挂法能否浮出壁纸
-        const PARENTPS = (target) => `Add-Type 'using System;using System.Runtime.InteropServices;public class P{[DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr FindWindow(string c,string n);[DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr FindWindowEx(IntPtr p,IntPtr a,string c,string n);[DllImport("user32.dll")]public static extern IntPtr SetParent(IntPtr c,IntPtr p);[DllImport("user32.dll")]public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int cx,int cy,uint f);}'
-$h=[IntPtr]${HWNDS}
-$prog=[P]::FindWindow('Progman',$null)
-if('${target}' -eq 'Progman'){[void][P]::SetParent($h,$prog)}else{$w=[P]::FindWindowEx([IntPtr]::Zero,[IntPtr]::Zero,'WorkerW',$null);[void][P]::SetParent($h,$w)}
-[void][P]::SetWindowPos($h,[IntPtr](-1),0,0,0,0,0x453)
-"parented-to=${target}"`;
-        console.log('[dock-test] parent-progman', await psRunAsync(PARENTPS('Progman')));
-        await new Promise(r => setTimeout(r, 500));
-        await shotDesk('desk-parent-progman.png');
-        const UNPARENTPS = `Add-Type 'using System;using System.Runtime.InteropServices;public class Q{[DllImport("user32.dll")]public static extern IntPtr SetParent(IntPtr c,IntPtr p);[DllImport("user32.dll")]public static extern int GetWindowLong(IntPtr h,int n);[DllImport("user32.dll")]public static extern int SetWindowLong(IntPtr h,int n,int v);[DllImport("user32.dll")]public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int cx,int cy,uint f);}'
-$h=[IntPtr]${HWNDS}
-[void][Q]::SetParent($h,[IntPtr]::Zero)
-$st=[Q]::GetWindowLong($h,-16)
-$st=($st -band -1073741825) -bor -2147483648
-[void][Q]::SetWindowLong($h,-16,[int]$st)
-[void][Q]::SetWindowPos($h,[IntPtr](-1),0,0,0,0,0x43)
-'unparented+styled'`;
-        console.log('[dock-test] unparent', await psRunAsync(UNPARENTPS));
-        await new Promise(r => setTimeout(r, 300));
-        console.log('[dock-test] parent-workerw', await psRunAsync(PARENTPS('WorkerW')));
-        await new Promise(r => setTimeout(r, 500));
-        await shotDesk('desk-parent-workerw.png');
-        console.log('[dock-test] unparent-final', await psRunAsync(UNPARENTPS)); // 解挂载，别污染 5d/6
-        await new Promise(r => setTimeout(r, 300));
         psRun(CLICK_SHOWDESK); // 再点一次还原其他窗口
         await new Promise(r => setTimeout(r, 600));
         // 5d. 真实 Win+D 键盘路径（SendInput），同样带正对照
@@ -1521,7 +1545,8 @@ Start-Sleep -Milliseconds 60
 [K]::keybd_event(0x5B,0,2,[UIntPtr]::Zero)`;
         if (helper.isMinimized()) { psRun(WIN_D); await new Promise(r => setTimeout(r, 600)); } // 先还原 helper
         // 5e. 像素级可见性断言（#70 真相：被壁纸盖住时窗口「健康」但用户看不见，光查 bounds/isMinimized 会假绿）。
-        //     DPI 感知截屏 + 小窗裁片比对：手势后裁片必须仍接近「小窗可见」基准、远离「纯壁纸」基准。
+        //     全部取样在「显示桌面」态内完成：常态下工作区窗口可能正好盖住小窗区 → 基准被污染（实测假 FAIL）；
+        //     显示桌面态屏幕 = 壁纸 + 小窗，干净。DPI 感知截屏 + 小窗裁片比对（详见下方采样流程）。
         const SCALE = screen.getPrimaryDisplay().scaleFactor || 1;
         const shotDpi = (name) => psRun(`Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 Add-Type 'using System.Runtime.InteropServices;public class D{[DllImport("user32.dll")]public static extern bool SetProcessDPIAware();}'
@@ -1539,10 +1564,6 @@ $g.Dispose();$bmp.Dispose()`);
           return img.crop({ x: Math.round(px * SCALE), y: 0, width: Math.round(PILL_W * SCALE), height: Math.round(PILL_H * SCALE) }).toBitmap();
         };
         const mmd = (a, b) => { let s = 0; const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) s += Math.abs(a[i] - b[i]); return s / n; };
-        shotDpi('pix-pill.png'); const prePix = cropBuf('pix-pill.png');   // 基准 A：小窗可见
-        win.hide(); await new Promise(r => setTimeout(r, 300));
-        shotDpi('pix-wall.png'); const wallPix = cropBuf('pix-wall.png');  // 基准 B：纯壁纸
-        win.showInactive(); applyTopmost(); await new Promise(r => setTimeout(r, 300));
         minEvents = 0; win.on('minimize', cnt);
         psRun(WIN_D);
         await new Promise(r => setTimeout(r, 1500));
@@ -1551,14 +1572,52 @@ $g.Dispose();$bmp.Dispose()`);
         check('win-d-gesture', helper.isMinimized(), `helperMin=${helper.isMinimized()}（正对照：手势必须真触发）`);
         check('win-d-keep-docked', !win.isMinimized() && bd.x > -2000 && bd.y > -2000,
           `minimized=${win.isMinimized()} bounds=${bd.x},${bd.y} minEvents=${minEvents}`);
+        // 5e 采样：post = 显示桌面态带小窗裁片；wall = 同态下隐藏小窗后的纯壁纸裁片（基准在态内自取，免疫遮挡环境）
         shotDpi('pix-desktop.png'); const postPix = cropBuf('pix-desktop.png');
-        const dPill = mmd(postPix, prePix), dWall = mmd(postPix, wallPix), dBase = mmd(prePix, wallPix);
-        check('pixel-discriminator', dBase > 8, `dBase=${dBase.toFixed(2)}（小窗/壁纸基准必须可分辨，否则断言失真）`);
-        check('pixel-pill-on-desktop', dWall > 8 && dPill < dWall, `dPill=${dPill.toFixed(2)} dWall=${dWall.toFixed(2)}（显示桌面后裁片必须仍是小窗、不是壁纸）`);
+        win.hide(); await new Promise(r => setTimeout(r, 300));
+        shotDpi('pix-wall.png'); const wallPix = cropBuf('pix-wall.png');
+        win.showInactive(); applyTopmost(); await new Promise(r => setTimeout(r, 300));
+        const dWall = mmd(postPix, wallPix);
+        check('pixel-pill-on-desktop', dWall > 8, `dWall=${dWall.toFixed(2)}（显示桌面后小窗像素必须真出现在壁纸上）`);
+        // 判别力正对照：同态下在小窗位置放一个实心洋红窗，裁片必须分辨出来（证明裁片管线看的正是这个位置、不是壁纸自然差异）。
+        // 正对照必须 topmost：显示桌面时壁纸层在普通窗之上，普通窗会被盖住（实测 pix-ctrl==pix-wall 的教训）。
+        const pillX0 = win.getBounds().x + Math.round((baseSize.w - PILL_W) / 2);
+        const ctrl = new BrowserWindow({ x: pillX0, y: 0, width: PILL_W, height: PILL_H, show: true, frame: false, backgroundColor: '#ff00ff', resizable: false, focusable: false });
+        ctrl.loadURL('about:blank');
+        ctrl.setAlwaysOnTop(true, 'screen-saver');
+        await new Promise(r => setTimeout(r, 400));
+        shotDpi('pix-ctrl.png'); const ctrlPix = cropBuf('pix-ctrl.png');
+        try { ctrl.destroy(); } catch (e) { }
+        check('pixel-discriminator', mmd(ctrlPix, wallPix) > 8, `dCtrl=${mmd(ctrlPix, wallPix).toFixed(2)}（正对照洋红窗必须可分辨）`);
         await shotDesk('desk-after-wind.png');
         psRun(WIN_D); // 再按一次还原其他窗口
         await new Promise(r => setTimeout(r, 500));
         try { helper.destroy(); } catch (e) { }
+        // 5f. z 序语义断言（置顶关吸顶 = 桌面部件）：普通程序窗口必须压在小窗前面。
+        //     koffi z 链遍历直接读序（红窗截图会被工作区窗口遮挡污染，z 序断言免疫环境）。
+        const pillHwnd = win.getNativeWindowHandle().readBigUInt64LE(0);
+        const pillScreenX = win.getBounds().x + Math.round((baseSize.w - PILL_W) / 2);
+        const cover = new BrowserWindow({ x: pillScreenX, y: 0, width: PILL_W, height: PILL_H, show: true, frame: false, backgroundColor: '#ff0000', resizable: false, focusable: false });
+        await new Promise(r => setTimeout(r, 600)); // 贴附定时器稳定：小窗钉壁纸层上沿，红窗必须在其上
+        shotDpi('pix-cover.png'); // 取证留档
+        let pillIdx = -1, coverIdx = -1;
+        const AG = glueInit();
+        if (AG) {
+          const coverHwnd = cover.getNativeWindowHandle().readBigUInt64LE(0);
+          const seenH = new Set();
+          let p2 = AG.getWindow(AG.getDesktop(), 5), i2 = 0; // GW_CHILD：z 序自顶向下
+          while (p2 && p2 !== 0n && i2 < 2000) {
+            const hs = String(p2); if (seenH.has(hs)) break; seenH.add(hs);
+            if (hs === String(pillHwnd)) pillIdx = i2;
+            if (hs === String(coverHwnd)) coverIdx = i2;
+            p2 = AG.getWindow(p2, 2); i2++; // GW_HWNDNEXT 向 z 序下方
+          }
+          if (pillIdx < 0 || coverIdx < 0) console.log('[dock-test][diag] z链长=', i2, 'pillH=', String(pillHwnd), 'coverH=', String(coverHwnd), '链首=', String(AG.getWindow(AG.getDesktop(), 5)));
+        }
+        check('z-behind-windows', pillIdx >= 0 && coverIdx >= 0 && coverIdx < pillIdx,
+          `pillIdx=${pillIdx} coverIdx=${coverIdx}（红窗 idx 必须小于小窗 idx = 红窗压在小窗上面）`);
+        try { cover.destroy(); } catch (e) { }
+        await new Promise(r => setTimeout(r, 200));
         // 6. 大窗态保持系统正常行为：非 docked 态最小化必须保持最小化（不被误拉回）
         undockWindow();
         await new Promise(r => setTimeout(r, 400));
@@ -1568,8 +1627,8 @@ $g.Dispose();$bmp.Dispose()`);
         win.restore(); // 复位，别把最小化态留在屏幕上
       } catch (e) { console.error('[dock-test] failed', e); check('exception', false, String((e && e.message) || e)); }
       // 还原设置（不污染用户的位置记忆）
-      try { settings.docked = saved.docked; settings.dockX = saved.dockX; settings.winPos = saved.winPos; persist({ docked: saved.docked, dockX: saved.dockX, winPos: saved.winPos }); } catch (e) { }
-      console.log('[dock-test] DONE', (passes.length === 14 && passes.every(Boolean)) ? 'PASS' : 'FAIL');
+      try { settings.docked = saved.docked; settings.dockX = saved.dockX; settings.winPos = saved.winPos; persist({ docked: saved.docked, dockX: saved.dockX, winPos: saved.winPos, alwaysOnTop: saved.alwaysOnTop }); applyTopmost(); } catch (e) { }
+      console.log('[dock-test] DONE', (passes.length === 15 && passes.every(Boolean)) ? 'PASS' : 'FAIL');
       app.exit(0);
     }, 1500);
   }
