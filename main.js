@@ -14,7 +14,7 @@ if (SHOT_MODE) {
 }
 
 // 网络抓取（网络层故障自动重试）/ 地名解析 / 地点搜索（Nominatim + Open-Meteo 双源兜底）
-const { got, clean, parseNominatim, searchPlaces, friendlyNetError } = require('./geo.js');
+const { got, clean, parseNominatim, searchPlaces, rankPlaces, locateByIp, reverseGeo, friendlyNetError } = require('./geo.js');
 // 外链白名单（数据卡 → 网页详情跳转）
 const { isAllowedExtUrl } = require('./ext-guard.js');
 
@@ -548,11 +548,26 @@ function registerIpc() {
   ipcMain.handle('png:save', (_e, dataURL) => savePng(dataURL).catch(() => null));
 
   ipcMain.handle('geo:search', async (_e, q) => {
-    // 双源兜底：Nominatim 故障/无结果 → Open-Meteo 地理编码；网络层故障 got() 自动重试
+    // 双源并行合并 + 智能排序（geo.searchPlaces）；toy1（中国天气网地名库）元数据作校验信号：
+    // 返回里没有「对得上省/名」的结果时（如「慈溪」只搜出安徽/广东同名小村），
+    // 用 toy1 的拼音做二次召回——Open-Meteo 库以拼音为名，查 "Cixi" 才能召回真正的慈溪市。
     const kw = String(q == null ? '' : q).trim().slice(0, 80);
     if (!kw) return [];
     try {
-      return await searchPlaces(kw);
+      const [list, meta] = await Promise.all([
+        searchPlaces(kw),
+        cnSrc.searchCityMeta(kw).catch(() => null)
+      ]);
+      if (meta && meta.pinyin) {
+        const hit = list.find(x => (clean(x.name) || '') === (clean(meta.name) || '')
+          && (!meta.province || !x.admin1
+            || x.admin1.includes(clean(meta.province)) || clean(meta.province).includes(x.admin1)));
+        if (!hit) {
+          const extra = await searchPlaces(kw, { pinyin: meta.pinyin, hint: meta }).catch(() => []);
+          return rankPlaces([...list, ...extra], kw, { hint: meta });
+        }
+      }
+      return list;
     } catch (err) { return { error: friendlyNetError(err) }; }
   });
 
@@ -567,48 +582,37 @@ function registerIpc() {
   });
 
   ipcMain.handle('geo:iplocate', async () => {
-    // IP 定位 -> 坐标 -> 逆地理编码成中文地名（精确到区县/街道）
-    // ip-api 带 district 字段：反查失败或结果过粗（只到地级市）时用区县名兜底精化
-    let lat, lon, region = '', city = '', district = '';
+    // IP 定位：三源投票（ip-api + pconline 国内库 + ipwho.is）聚合出最深名字链，
+    // 坐标先用名字检索精化到正确区县（IP 库坐标常偏到运营商枢纽、移动宽带常只到地级市），
+    // 再逆地理补街道级地址链，最后附中国天气网城市码（保证国内天气数据按对的城市取）。
+    const ip = await locateByIp().catch(() => null);
+    if (!ip || !Number.isFinite(ip.lat)) return { error: '无法获取网络定位' };
+    let loc;
     try {
-      const r = await got('http://ip-api.com/json/?lang=zh-CN&fields=status,country,regionName,city,district,lat,lon', 10000);
-      if (r.status === 'success') {
-        lat = r.lat; lon = r.lon;
-        region = r.regionName || ''; city = r.city || ''; district = r.district || '';
-      }
-    } catch (e) { }
-    if (!Number.isFinite(lat)) {
-      try {
-        const r = await got('https://ipwho.is/?lang=zh', 10000);
-        if (r.success) { lat = r.latitude; lon = r.longitude; city = r.city || ''; }
-      } catch (e) { }
-    }
-    if (!Number.isFinite(lat)) return { error: '无法获取网络定位' };
-    const fallbackName = district || city || region;
-    try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=zh&zoom=16&addressdetails=1&lat=${lat}&lon=${lon}`;
-      const r = await got(url, 15000);
-      const parsed = parseNominatim(r);
-      if (!parsed.detail && fallbackName) parsed.detail = fallbackName;
+      loc = await reverseGeo(ip.lat, ip.lon);
       // 反查结果过粗（主名只到地级市/省份）→ 用 IP 的区县名精化主名，别停在「宁波」级
-      const nm = clean(parsed.name), coarse = !nm || nm === clean(city) || nm === clean(region);
-      if (coarse && district) {
-        parsed.name = clean(district);
-        if (!parsed.parent && city) parsed.parent = clean(city);
+      const nm = clean(loc.name), coarse = !nm || nm === clean(ip.city) || nm === clean(ip.province);
+      if (coarse && ip.district) {
+        loc.name = clean(ip.district);
+        if (!loc.parent && ip.city) loc.parent = clean(ip.city);
       }
-      parsed.auto = true;
-      return parsed;
+      if (!loc.detail && ip.district) loc.detail = '';
     } catch (err) {
-      // 反查失败：用 IP 的 省/市/区县 三级链兜底（名称优先取区县）
-      return {
-        name: clean(fallbackName) || '当前位置',
-        parent: clean(city) !== clean(fallbackName) ? clean(city) : '',
-        detail: '',
-        admin1: clean(region),
-        lat, lon, auto: true,
-        display: [region, city, district].filter(Boolean).join(' · ')
+      // 反查失败：用 IP 投票出的 省/市/区县 名字链兜底
+      loc = {
+        name: clean(ip.name) || '当前位置',
+        parent: ip.parent || (clean(ip.city) !== clean(ip.name) ? clean(ip.city) : ''),
+        detail: '', admin1: clean(ip.province) || ip.admin1 || '',
+        lat: ip.lat, lon: ip.lon,
+        display: ip.display || [ip.province, ip.city, ip.district].filter(Boolean).join(' · ')
       };
     }
+    loc.auto = true;
+    try {
+      const meta = await cnSrc.searchCityMeta(loc.name);
+      if (meta) loc.code = meta.code;
+    } catch (e) { /* toy1 限流不阻塞定位 */ }
+    return loc;
   });
 
   ipcMain.handle('win:action', (_e, act) => {

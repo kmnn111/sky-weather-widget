@@ -61,7 +61,17 @@ app.whenReady().then(async () => {
       `&timezone=auto&forecast_days=3`;
     try {
       const [w, q] = await Promise.all([got(f, 15000), got(a, 15000).catch(() => null)]);
-      return { weather: w, air: q, fetchedAt: Date.now() };
+      return {
+        weather: w, air: q, fetchedAt: Date.now(),
+        // 国内源合并 fixture：验证 srcLine 分段来源显示 + 官方预警接入（#74）
+        sources: {
+          current: '中国天气网', daily: 'itboy 聚合', air: 'itboy 聚合 + Open-Meteo',
+          hourly: 'Open-Meteo', minutely: 'Open-Meteo', alerts: '中国天气网',
+          cnCity: '慈溪', cnCode: '101210403'
+        },
+        cnAlerts: [{ type: '暴雨', level: '橙色', text: '预计未来 12 小时降雨量将达 50 毫米以上', time: '' }],
+        cnZs: null
+      };
     } catch (err) { return { error: String(err.message || err) }; }
   });
   ipcMain.handle('weather:archive', () => null);
@@ -108,6 +118,20 @@ app.whenReady().then(async () => {
     }
     check('boot-renderAll', booted);
     if (!booted) { console.log(`ext-test summary pass=${pass} fail=${fail}`); return app.exit(1); }
+
+    /* ①b 数据来源分段显示 + 官方预警接入（#74：硬编码「来源 Open-Meteo」根治） */
+    const src = await js(`({
+      line: (document.getElementById('srcLine') || {}).textContent || '',
+      tip: (document.getElementById('srcLine') || {}).title || '',
+      foot: (document.getElementById('footText') || {}).textContent || '',
+      alerts: [...document.querySelectorAll('#alertWrap .alert')].map(a => ({ cls: a.className, text: a.textContent.trim() }))
+    })`);
+    check('src-line-summary', /来源 中国天气网 \+ itboy 聚合 \+ Open-Meteo/.test(src.line), src.line);
+    check('src-line-tip', /实况：中国天气网/.test(src.tip) && /逐时：Open-Meteo/.test(src.tip), src.tip);
+    // 页脚署名必须与 srcLine 同源同步（曾硬编码 Open-Meteo，与国内源合并结果自相矛盾）
+    check('foot-text-sync', /^天气数据 中国天气网 \+ itboy 聚合 \+ Open-Meteo · 地名 OpenStreetMap \+ Open-Meteo · 老黄历 lunar-javascript$/.test(src.foot), src.foot);
+    check('alert-official-first', !!(src.alerts[0] && /暴雨·橙色预警/.test(src.alerts[0].text)
+      && /alert orange/.test(src.alerts[0].cls)), src.alerts);
 
     /* ② ↗ 角标 + data-ext 注入 */
     const inj = await js(`({

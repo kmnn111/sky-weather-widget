@@ -93,38 +93,52 @@ function wmoFromCn(code, text) {
 const WIND_DEG = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 const num = v => { const x = parseFloat(String(v == null ? '' : v).replace(/[^\d.\-]/g, '')); return Number.isFinite(x) ? x : null; };
 
-/* ---------------- toy1 地名搜索 -> 9 位城市码 ----------------
+/* ---------------- toy1 地名搜索 -> 9 位城市码 + 地名元数据 ----------------
    ref 形如 101210403~zhejiang~慈溪~Cixi~慈溪~cixi~0574~315300~CX~浙江
    字段：码~省拼音~名称~英文名~上级名~上级拼音~区号~邮编~缩写~省名
-   街道级条目码为 12 位（101210403001），天气数据归并到前 9 位所属城市。 */
-const nameCache = new Map(); // name -> { code, ts }（code 可为 null 负缓存）
+   街道级条目码为 12 位（101210403001），天气数据归并到前 9 位所属城市。
+   searchCityMeta 额外返回拼音/省名/上级名——拼音是 Open-Meteo 地理编码
+   中文查询召回真正城市的关键钥匙（其库以拼音为名，字面中文只命中同名小村）。 */
+const nameCache = new Map(); // name -> { meta, ts }（meta 可为 null 负缓存）
 
-async function searchCityCode(name) {
+async function searchCityMeta(name) {
   const key = String(name || '').trim();
   if (!key) return null;
   const hit = nameCache.get(key);
-  const TTL = hit && hit.code ? 24 * 3600 * 1000 : 10 * 60 * 1000; // 负缓存短（toy1 偶发限流）
-  if (hit && Date.now() - hit.ts < TTL) return hit.code;
+  const TTL = hit && hit.meta ? 24 * 3600 * 1000 : 10 * 60 * 1000; // 负缓存短（toy1 偶发限流）
+  if (hit && Date.now() - hit.ts < TTL) return hit.meta;
 
-  let code = null;
-  for (let i = 0; i < 2 && !code; i++) {
+  let meta = null;
+  for (let i = 0; i < 2 && !meta; i++) {
     try {
       const t = await got('https://toy1.weather.com.cn/search?cityname=' + encodeURIComponent(key), 10000, { headers: WCN_HEADERS, text: true }, 1);
       const list = JSON.parse(String(t).replace(/^\(/, '').replace(/\)$/, '') || '[]');
       const items = (Array.isArray(list) ? list : []).map(it => {
         const p = String(it && it.ref || '').split('~');
-        return { raw: p[0], name: p[2] || '', parent: p[4] || '', province: p[9] || '' };
+        return {
+          raw: p[0], name: p[2] || '', pinyin: p[3] || '',
+          parent: p[4] || '', province: p[9] || ''
+        };
       }).filter(x => /^\d{9}/.test(x.raw));
       if (items.length) {
         const exact = items.find(x => x.name === key || x.name === key + '市' || key === x.name + '市');
         const pick = exact || items[0];
-        code = pick.raw.slice(0, 9);
+        meta = {
+          code: pick.raw.slice(0, 9),
+          name: pick.name, pinyin: pick.pinyin,
+          parent: pick.parent, province: pick.province
+        };
       }
     } catch (e) { /* 限流/网络抖动 -> 短退避重试一次 */ }
-    if (!code && i === 0) await new Promise(r => setTimeout(r, 400));
+    if (!meta && i === 0) await new Promise(r => setTimeout(r, 400));
   }
-  nameCache.set(key, { code, ts: Date.now() });
-  return code;
+  nameCache.set(key, { meta, ts: Date.now() });
+  return meta;
+}
+
+async function searchCityCode(name) {
+  const meta = await searchCityMeta(name);
+  return meta ? meta.code : null;
 }
 
 /* ---------------- JS 变量赋值提取（dataSK/dataDZ/alarmDZ/dataZS） ----------------
@@ -247,7 +261,8 @@ async function fetchCn(name, code) {
 /* ---------------- 合并：国内数据覆盖 Open-Meteo 结构 ----------------
    实况逐字段覆盖（有值才盖）；7 天按日期对齐覆盖；空气只盖 pm2.5/pm10。
    逐时/分钟级/UV/花粉/能见度逐时等仍由 Open-Meteo 提供（国内无免密钥源）。
-   返回 sources 数据源标识（写进返回结构，供 UI 如实标注）。 */
+   返回 sources 数据源标识（写进返回结构，供 UI 如实标注）：
+   标注如实到段——d1 实况段标「中国天气网」，itboy 段（7 天/空气 pm）标「itboy 聚合」。 */
 function mergeCn(w, air, cn) {
   const sources = {
     current: 'Open-Meteo', daily: 'Open-Meteo', air: 'Open-Meteo',
@@ -279,17 +294,18 @@ function mergeCn(w, air, cn) {
       if (dc.sunrise[j]) { w.daily.sunrise[i] = dc.sunrise[j]; touched = true; }
       if (dc.sunset[j]) { w.daily.sunset[i] = dc.sunset[j]; touched = true; }
     });
-    if (touched) sources.daily = '中国天气网';
+    if (touched) sources.daily = 'itboy 聚合';
   }
 
   if (cn.air && air && air.current) {
     let touched = false;
     if (cn.air.pm2_5 != null) { air.current.pm2_5 = cn.air.pm2_5; touched = true; }
     if (cn.air.pm10 != null) { air.current.pm10 = cn.air.pm10; touched = true; }
-    if (touched) sources.air = '中国天气网 + Open-Meteo';
+    if (touched) sources.air = 'itboy 聚合 + Open-Meteo';
   }
 
+  if (cn.alerts && cn.alerts.length) sources.alerts = '中国天气网';
   return sources;
 }
 
-module.exports = { searchCityCode, fetchIndex, fetchItboy, fetchCn, normalize, mergeCn, wmoFromCn };
+module.exports = { searchCityMeta, searchCityCode, fetchIndex, fetchItboy, fetchCn, normalize, mergeCn, wmoFromCn };

@@ -128,9 +128,19 @@
     if (glow.dusk) chips.push(['晚霞', glow.dusk.label]);
     $('statRow').innerHTML = chips.map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('');
 
+    // 提示条：官方预警（中国天气网 alarmDZ，气象台发布）置顶 + 自算提示（温差/风/UV 等）补充
+    const official = (state.data && state.data.cnAlerts) || [];
+    const lvlTone = l => /红/.test(l || '') ? 'red' : /橙/.test(l || '') ? 'orange'
+      : /黄/.test(l || '') ? 'yellow' : /蓝/.test(l || '') ? 'blue' : 'green';
+    const offHtml = official.slice(0, 2).map(a => {
+      const title = a.type
+        ? `${a.type}${a.level ? '·' + a.level : ''}预警`
+        : (a.level ? a.level + '预警' : '官方预警');
+      return `<div class="alert ${lvlTone(a.level)}"><span class="dot"></span><span><b>${esc(title)}</b> ${esc(a.text || '')}</span></div>`;
+    });
     const alerts = Weather.buildAlerts(d, w.hourly);
-    $('alertWrap').innerHTML = alerts.map(a =>
-      `<div class="alert ${a.tone}"><span class="dot"></span><span>${esc(a.text)}</span></div>`).join('');
+    $('alertWrap').innerHTML = offHtml.concat(alerts.map(a =>
+      `<div class="alert ${a.tone}"><span class="dot"></span><span>${esc(a.text)}</span></div>`)).slice(0, 4).join('');
 
     // 标题主打区县名（如「慈溪」），完整地址链（含街道）放到下方 detail 行
     $('locText').textContent = state.loc.name || locLine(state.loc);
@@ -142,9 +152,27 @@
       : (disp || dt);
     $('locDetail').title = state.loc.display || '';
 
-    // 更新时间 + 数据来源
+    // 更新时间 + 数据来源（分段如实标注：国内源合并了哪段就标哪段，明细挂 title）
     const fu = state.fetchedAt || new Date();
-    $('srcLine').innerHTML = `数据更新 ${pad(fu.getHours())}:${pad(fu.getMinutes())}:${pad(fu.getSeconds())} · 来源 Open-Meteo`;
+    const s = (state.data && state.data.sources) || null;
+    let srcSum = 'Open-Meteo', srcTip = '';
+    if (s) {
+      const segs = [
+        ['实况', s.current], ['7天', s.daily], ['空气', s.air],
+        ['逐时', s.hourly], ['分钟级', s.minutely], ['预警', s.alerts]
+      ].filter(([, v]) => v);
+      const uniq = [];
+      for (const [, v] of segs) {
+        for (const part of String(v).split(' + ')) if (part && !uniq.includes(part)) uniq.push(part);
+      }
+      if (uniq.length) srcSum = uniq.join(' + ');
+      srcTip = segs.map(([k, v]) => `${k}：${v}`).join('\n');
+    }
+    $('srcLine').innerHTML = `数据更新 ${pad(fu.getHours())}:${pad(fu.getMinutes())}:${pad(fu.getSeconds())} · 来源 ${srcSum}`;
+    $('srcLine').title = srcTip;
+    // 页脚署名与 srcLine 同步消费 sources：曾硬编码「天气数据 Open-Meteo」，
+    // 国内源合并后与 srcLine 自相矛盾（1.0.27 排查发现，同类显示 bug）
+    if ($('footText')) $('footText').textContent = `天气数据 ${srcSum} · 地名 OpenStreetMap + Open-Meteo · 老黄历 lunar-javascript`;
   }
 
   function renderHourly() {

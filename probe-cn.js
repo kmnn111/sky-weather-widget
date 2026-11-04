@@ -1,7 +1,7 @@
 'use strict';
 /**
  * cn-source.js 自检（node probe-cn.js 直接跑，无需启动 Electron）
- * 覆盖：① wmoFromCn 天气码/中文词映射 ② searchCityCode toy1 真实搜索（含 12 位街道码归并）
+ * 覆盖：① wmoFromCn 天气码/中文词映射 ② searchCityCode/searchCityMeta toy1 真实搜索（含 12 位街道码归并）
  *      ③ fetchIndex 实况/预警/生活指数解析 ④ fetchItboy 7 天+日出日落+空气（http 明文）
  *      ⑤ fetchCn 归一化全链路 ⑥ mergeCn 覆盖合并 + 日期对齐 + 降级路径
  */
@@ -37,6 +37,10 @@ const check = (name, cond, extra) => {
   check('search-none', none === null, none);
   const again = await cn.searchCityCode('慈溪'); // 命中缓存
   check('search-cached', again === '101210403', again);
+  /* searchCityMeta 元数据：拼音是 Open-Meteo 中文查询召回真城市的关键钥匙 */
+  const meta = await cn.searchCityMeta('慈溪');
+  check('meta-cixi', !!(meta && meta.code === '101210403' && meta.name === '慈溪'
+    && meta.pinyin === 'Cixi' && meta.province === '浙江'), meta);
 
   /* ③ fetchIndex 实况/预警/生活指数 */
   const idx = await cn.fetchIndex('101210403');
@@ -75,7 +79,9 @@ const check = (name, cond, extra) => {
   };
   const air = { current: { pm2_5: 999, pm10: 999, ozone: 80 } };
   const s = cn.mergeCn(w, air, r);
-  check('merge-sources', s.current === '中国天气网' && s.daily === '中国天气网' && s.air === '中国天气网 + Open-Meteo' && s.hourly === 'Open-Meteo', s);
+  check('merge-sources', s.current === '中国天气网' && s.daily === 'itboy 聚合'
+    && s.air === 'itboy 聚合 + Open-Meteo' && s.hourly === 'Open-Meteo'
+    && (r.alerts.length ? s.alerts === '中国天气网' : !s.alerts), s);
   check('merge-current', w.current.temperature_2m !== 99 && w.current.apparent_temperature === 5, w.current);
   check('merge-date-align', w.daily.time[0] === day0 && w.daily.sunrise[0] !== 'a' && w.daily.sunrise[1] === 'b', w.daily);
   check('merge-air-pm', air.current.pm2_5 !== 999 && air.current.ozone === 80, air.current);
