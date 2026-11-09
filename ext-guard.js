@@ -8,9 +8,13 @@ const ALLOWED_HOSTS = [
   'timeanddate.com'   // 月相
 ];
 function isAllowedExtUrl(u) {
+  const raw = String(u == null ? '' : u);
+  // 反斜杠/控制字符：WHATWG 会把 \ 归一成 /，Windows ShellExecute 的解析却未必一致（TOCTOU）
+  if (raw.includes('\\') || /[\u0000-\u001f]/.test(raw)) return false;
   try {
-    const url = new URL(String(u));
+    const url = new URL(raw);
     if (url.protocol !== 'https:') return false;
+    if (url.username || url.password || (url.port && url.port !== '443')) return false;
     const host = url.hostname.toLowerCase();
     return ALLOWED_HOSTS.some(h => host === h || host.endsWith('.' + h));
   } catch (e) { return false; }

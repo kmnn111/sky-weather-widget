@@ -24,5 +24,8 @@ contextBridge.exposeInMainWorld('sky', {
   dockHover: (inside) => ipcRenderer.send('dock:hover', !!inside),
   onDockState: (cb) => ipcRenderer.on('dock:state', (_e, s) => cb && cb(s)),
   trayTemp: (dataURL) => ipcRenderer.send('tray:temp', dataURL),
+  trayInfo: (text) => ipcRenderer.send('tray:info', String(text || '').slice(0, 120)),
+  onTrayAction: (cb) => ipcRenderer.on('tray:action', (_e, a) => cb && cb(a)),
+  copyPng: (dataURL) => ipcRenderer.invoke('png:copy', dataURL),
   notify: (title, body) => ipcRenderer.send('notify', { title, body })
 });

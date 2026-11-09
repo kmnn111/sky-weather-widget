@@ -294,6 +294,10 @@ body.docked:not(.expanded) #settingsPanel { display: none; }
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+/* 设置面板自身的 30px 模糊也必须关：滚动容器是它的子元素，
+   只给 .panel-body > * 关模糊永远匹配不到父元素，透明窗滚动期全程重采样桌面 */
+.panel.scrolling { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(255, 255, 255, 0.86); }
+body.night .panel.scrolling { background: rgba(22, 30, 58, 0.9); }
 #widget.scrolling .card {
   background: rgba(255, 255, 255, 0.72);
 }
@@ -496,6 +500,8 @@ body.motion-quiet .mm-sprout { animation: none !important; }
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 11px; color: var(--ink-soft);
 }
+/* 排序拖动期间：所有行（不只是被拖行）都禁过渡，否则逐帧写 transform 会被 0.2s 平滑叠加 → 挤位拖尾 */
+.mod-sort.sorting .mod-row { transition: none; }
 .mod-row.dragging {
   border-color: #378ADD; background: rgba(55, 138, 221, 0.12);
   transition: none; position: relative; z-index: 3;
@@ -605,7 +611,7 @@ body.motion-quiet .mm-sprout { animation: none !important; }
 .aqi-bar-fill {
   position: absolute; top: -3px; width: 4px; height: 13px; border-radius: 3px;
   background: #fff; box-shadow: 0 0 0 1.5px rgba(74, 63, 53, 0.55); left: 0;
-  transition: left .8s ease;
+  transition: transform .8s ease; /* 用合成层位移，不逐帧触发 left 布局 */
 }
 .aqi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; }
 .aqi-cell {
@@ -835,6 +841,18 @@ body.motion-quiet .mm-sprout { animation: none !important; }
 }
 .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 9px 0; cursor: pointer; }
 .check input { accent-color: var(--sun); width: 15px; height: 15px; }
+.unit-row { display: flex; gap: 7px; }
+.stale-tag { color: #b2601f; font-weight: 600; }
+body.night .stale-tag { color: #f0c080; }
+.unit-row .select { flex: 1; min-width: 0; }
+.about-keys { font-size: 10.5px; color: var(--ink-soft); line-height: 1.6; padding: 0 6px; }
+/* 键盘可达：所有可点控件给清晰焦点环（无边框透明窗默认没有焦点提示） */
+:where(button, input, select, .loc-item, .s-item, .xcard[data-ext], .icon-btn):focus-visible {
+  outline: 2px solid #3d84c4; outline-offset: 2px; border-radius: 8px;
+}
+body.night :where(button, input, select, .loc-item, .s-item, .xcard[data-ext], .icon-btn):focus-visible {
+  outline-color: #8fb8ee;
+}
 .about { margin-top: 13px; text-align: center; line-height: 1.8; }
 .about-name { font-size: 12px; color: var(--ink); font-weight: 500; letter-spacing: 0.3px; }
 .about-name em { font-style: normal; font-size: 10px; color: var(--ink-soft); font-weight: 400; margin-left: 3px; }
@@ -1885,6 +1903,8 @@ body.night .x-r-play:hover { background: rgba(122, 168, 235, 0.42); }
   width: 100%; border-radius: 10px; display: block;
   box-shadow: 0 6px 16px rgba(153, 53, 86, 0.18);
 }
+.share-btns { display: flex; gap: 6px; margin-top: 8px; }
+.share-btns button { flex: 1; min-width: 0; }
 
 /* ---- 图标微动效（SVG 内类名，见 extra.js ICO） ---- */
 .ico-sway {
@@ -1963,3 +1983,21 @@ body.motion-quiet .x-chips i, body.motion-quiet .x-badge, body.motion-quiet .x-s
   transition: none !important;
 }
 body.motion-quiet .xs-line { stroke-dashoffset: 0; }
+
+/* 全静止兜底：上面逐条枚举容易漏（云团漂移、图标动画、地球光晕、AQI 指针…），
+   这里按「根状态」一次性把所有 CSS 动画/过渡关掉；canvas 粒子与地球 rAF 由 JS 同步挂起。
+   系统「减少动态效果」同样生效，除非用户在设置里显式选「始终播放」(motion-override)。 */
+body.motion-quiet, body.motion-quiet *,
+body.motion-quiet *::before, body.motion-quiet *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  body:not(.motion-override), body:not(.motion-override) *,
+  body:not(.motion-override) *::before, body:not(.motion-override) *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

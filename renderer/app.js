@@ -22,8 +22,33 @@
     catKey: 'jiaqu',
     refreshTimer: null,
     lastDate: '',
-    fetchedAt: null        // 天气数据最近一次成功更新时间
+    fetchedAt: null,      // 天气数据最近一次成功更新时间
+    failCount: 0,         // 连续失败次数（指数退避用）
+    lastFetchTry: 0       // 最近一次发起刷新的时刻（防双触发）
   };
+
+  /* ================= 单位换算中枢 =================
+     显示单位与存储阈值严格隔离：数据字段、提醒规则阈值一律按 °C / km·h⁻¹ / m·s⁻¹ 原值存储，
+     只在渲染出口换算，避免切换单位后规则语义漂移（例如 °F 下把 35 当成高温阈值）。 */
+  const SkyUnits = {
+    isF() { return !!(state.settings && state.settings.unit === 'f'); },
+    mode() { return (state.settings && state.settings.windUnit) || 'level'; },
+    num(c) { const v = Number(c); return Number.isFinite(v) ? (this.isF() ? v * 9 / 5 + 32 : v) : 0; },
+    temp(c) { return Math.round(this.num(c)) + '°'; },
+    delta(c) { const v = Number(c) || 0; return Math.round(this.isF() ? v * 9 / 5 : v) + '°'; }, // 温差只缩放、不加 32
+    windParts(kmh) {
+      const v = Number(kmh) || 0, u = this.mode();
+      if (u === 'ms') return { num: (v / 3.6).toFixed(1), unit: 'm/s' };
+      if (u === 'kmh') return { num: String(Math.round(v)), unit: 'km/h' };
+      return { num: String(window.Weather ? Weather.windLevel(v) : 0), unit: '级' };
+    },
+    windText(kmh) {
+      const p = this.windParts(kmh);
+      return p.unit === '级' ? p.num + '级' : p.num + ' ' + p.unit;
+    },
+    windFromMs(ms) { return this.windText((Number(ms) || 0) * 3.6); } // 提醒规则阈值以 m/s 存储
+  };
+  window.SkyUnits = SkyUnits;
 
   /* ================= 时钟 & 天空 ================= */
   function tickClock() {
@@ -43,7 +68,17 @@
       renderPill(); // 跨天时刷新小窗的年月日 / 农历
     }
     if (now.getSeconds() === 0) checkBrief(); // 整分检查早晚报（8:00 / 20:00 一发即去重）
+    // 睡眠唤醒 / 定时器被系统冻结后按「数据年龄」补刷：60s 粒度，且不与定时刷新双触发
+    const ms = Date.now();
+    if (ms - lastStaleCheck > 60000) {
+      lastStaleCheck = ms;
+      if (state.loc && state.settings && !document.hidden) {
+        const mins = Number(state.settings.refreshMinutes) || 10;
+        if (!state.fetchedAt || ms - state.fetchedAt.getTime() > mins * 60 * 1000) loadWeather();
+      }
+    }
   }
+  let lastStaleCheck = 0;
 
   function renderDateLine(now) {
     const info = Almanac.dayInfo(now);
@@ -68,7 +103,7 @@
         return now.getTime() >= sr && now.getTime() < ss;
       }
     }
-    return w ? !!w.current.is_day : (now.getHours() > 6 && now.getHours() < 19);
+    return w && w.current ? !!w.current.is_day : (now.getHours() > 6 && now.getHours() < 19);
   }
 
   let flipTimer = null;
@@ -76,12 +111,13 @@
     const now = new Date();
     const w = state.data && state.data.weather;
     const isDay = computeIsDay(w, now);
-    const group = w ? Weather.codeInfo(w.current.weather_code, isDay).group : 'clear';
+    const group = w && w.current ? Weather.codeInfo(Number(w.current.weather_code) || 0, isDay).group : 'clear';
     // setMode 统一设置 night 并重绘天空，paintSky 不再按钟点猜昼夜
     FX.setMode(group, isDay, now);
-    if (w) {
-      FX.placeCelestial(w.daily.sunrise[0], w.daily.sunset[0]);
-    }
+    // 降级/合并源可能只回部分分段：日月定位与翻转定时器都必须逐段判空
+    const sr = w && w.daily && w.daily.sunrise && w.daily.sunrise[0];
+    const ss = w && w.daily && w.daily.sunset && w.daily.sunset[0];
+    if (sr && ss) FX.placeCelestial(sr, ss);
     // 日落后整个界面切换到星空/黑夜暗色调（body.night 覆盖主题变量，纯 CSS 过渡）
     document.body.classList.toggle('night', !isDay);
     updateTrayTemp(); // 昼夜翻转 → 托盘温度图标配色跟着换（fingerprint 保证不重复发 IPC）
@@ -109,15 +145,15 @@
     const w = state.data.weather;
     const c = w.current, d = w.daily;
     const info = Weather.codeInfo(c.weather_code, computeIsDay(w, new Date()));
-    $('tempNow').textContent = Math.round(c.temperature_2m);
+    $('tempNow').textContent = Math.round(SkyUnits.num(c.temperature_2m));
     $('nowIcon').innerHTML = `<span class="big-icon">${Icons.svg(info.icon, 58)}</span>`;
     $('condText').textContent = info.text;
-    $('tempRange').textContent = `今日 ${Math.round(d.temperature_2m_max[0])}° / ${Math.round(d.temperature_2m_min[0])}°`;
+    $('tempRange').textContent = `今日 ${SkyUnits.temp(d.temperature_2m_max[0])} / ${SkyUnits.temp(d.temperature_2m_min[0])}`;
 
     const chips = [
-      ['体感', `${Math.round(c.apparent_temperature)}°`],
+      ['体感', SkyUnits.temp(c.apparent_temperature)],
       ['湿度', `${c.relative_humidity_2m}%`],
-      ['风', `${Weather.windDir(c.wind_speed_10m ? c.wind_direction_10m : 0)} ${Weather.windLevel(c.wind_speed_10m)}级`],
+      ['风', `${Weather.windDir(c.wind_speed_10m ? c.wind_direction_10m : 0)} ${SkyUnits.windText(c.wind_speed_10m)}`],
       ['气压', `${Math.round(c.pressure_msl)}hPa`],
       ['日出', (d.sunrise[0] || '').slice(11)],
       ['日落', (d.sunset[0] || '').slice(11)]
@@ -168,7 +204,10 @@
       if (uniq.length) srcSum = uniq.join(' + ');
       srcTip = segs.map(([k, v]) => `${k}：${v}`).join('\n');
     }
-    $('srcLine').innerHTML = `数据更新 ${pad(fu.getHours())}:${pad(fu.getMinutes())}:${pad(fu.getSeconds())} · 来源 ${srcSum}`;
+    const ageMin = state.fetchedAt ? (Date.now() - state.fetchedAt.getTime()) / 60000 : 0;
+    const stale = ageMin > (Number(state.settings && state.settings.refreshMinutes) || 10) * 2;
+    $('srcLine').innerHTML = `数据更新 ${pad(fu.getHours())}:${pad(fu.getMinutes())}:${pad(fu.getSeconds())} · 来源 ${srcSum}` +
+      (stale ? ' · <span class="stale-tag">数据已过期，正在重试</span>' : '');
     $('srcLine').title = srcTip;
     // 页脚署名与 srcLine 同步消费 sources：曾硬编码「天气数据 Open-Meteo」，
     // 国内源合并后与 srcLine 自相矛盾（1.0.27 排查发现，同类显示 bug）
@@ -191,7 +230,7 @@
       html += `<div class="h-item ${i === idx ? 'now' : ''}">
         <div class="h-time">${i === idx ? '现在' : t.slice(11, 13) + '时'}</div>
         <div class="h-icon">${Icons.svg(info.icon, 32)}</div>
-        <div class="h-temp">${Math.round(w.hourly.temperature_2m[i])}°</div>
+        <div class="h-temp">${SkyUnits.temp(w.hourly.temperature_2m[i])}</div>
         <div class="h-pop">${pop > 0 ? '☂' + pop + '%' : ''}</div>
       </div>`;
     }
@@ -260,7 +299,7 @@
     if (maxI > 0 && maxI < n - 1 && maxI !== minI) marks.push([maxI, temps[maxI], 'mid']);
     const dots = marks.map(([i, t, kind]) =>
       `<circle cx="${x(i).toFixed(1)}" cy="${y(t).toFixed(1)}" r="2.6" class="tr-dot"/>` +
-      (kind === 'mid' ? `<text x="${x(i).toFixed(1)}" y="${(y(t) - 7).toFixed(1)}" class="tr-lab">${Math.round(t)}°</text>` : '')
+      (kind === 'mid' ? `<text x="${x(i).toFixed(1)}" y="${(y(t) - 7).toFixed(1)}" class="tr-lab">${SkyUnits.temp(t)}</text>` : '')
     ).join('');
     el.innerHTML = `<svg viewBox="0 0 ${VW} ${VH}" width="100%" height="${VH}" preserveAspectRatio="none" aria-hidden="true">
       ${grid}<path d="${dpath}" class="tr-line"/>${bars}<g class="tr-zeros">${zeros}</g>${dots}${ticks}</svg>`;
@@ -280,7 +319,7 @@
     if (idx < 0) idx = 0;
     const slots = [];
     for (let i = idx; i < Math.min(idx + 8, m.time.length); i++) {
-      slots.push({ p: Number(m.precipitation[i]) || 0, code: Number(m.weather_code[i]) || 0 });
+      slots.push({ p: Number(m.precipitation[i]) || 0, code: Number((m.weather_code || [])[i]) || 0 });
     }
     if (!slots.length) { el.innerHTML = ''; return; }
     const maxP = Math.max(0.8, ...slots.map(s => s.p));
@@ -366,19 +405,20 @@
     g.moveTo(r + 2, 2); g.arcTo(62, 2, 62, 62, r); g.arcTo(62, 62, 2, 62, r);
     g.arcTo(2, 62, 2, 2, r); g.arcTo(2, 2, 62, 2, r); g.closePath();
     g.fill(); g.stroke();
-    g.font = '700 34px "Segoe UI", sans-serif';
+    const tv = SkyUnits.num(t);
+    g.font = '700 ' + (Math.abs(tv) >= 100 ? 26 : 34) + 'px "Segoe UI", sans-serif'; // °F 三位数自动缩字
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = isDay ? '#4a3a22' : '#dfe9ff';
-    const label = Math.abs(t) >= 100 ? String(t) : t + '°';
+    const label = Math.abs(tv) >= 100 ? String(Math.round(tv)) : Math.round(tv) + '°';
     g.fillText(label, 32, 33);
     return cv.toDataURL('image/png');
   }
   function updateTrayTemp() {
     const w = state.data && state.data.weather;
     if (!w || !state.settings || state.settings.trayTemp === false) return;
-    const t = Math.round(w.current.temperature_2m);
+    const t = Math.round(SkyUnits.num(w.current.temperature_2m));
     const isDay = computeIsDay(w, new Date());
-    const key = t + '|' + (isDay ? 'd' : 'n');
+    const key = t + '|' + (isDay ? 'd' : 'n') + '|' + (SkyUnits.isF() ? 'f' : 'c');
     if (key === trayKey) return; // 温度整数与昼夜都没变 → 不重绘不发 IPC
     trayKey = key;
     try { sky.trayTemp(trayDataURL(t, isDay)); } catch (e) { }
@@ -393,7 +433,7 @@
     const info = Weather.summarizeDaily(w, i);
     const pop = Math.max(0, Math.round((d.precipitation_probability_max || [0])[i] || 0));
     const title = (slot === 'am' ? '早安 · ' : '晚安 · ') + (state.loc.name || '天气');
-    const body = `${i === 0 ? '今天' : '明天'}${info.text}，${Math.round(d.temperature_2m_min[i])}~${Math.round(d.temperature_2m_max[i])}°` +
+    const body = `${i === 0 ? '今天' : '明天'}${info.text}，${SkyUnits.temp(d.temperature_2m_min[i])}~${SkyUnits.temp(d.temperature_2m_max[i])}` +
       (pop >= 30 ? `，降水概率 ${pop}%记得带伞` : '');
     return { title, body };
   }
@@ -416,15 +456,33 @@
 
   function renderDaily() {
     const w = state.data.weather;
-    const d = w.daily;
-    const mins = d.temperature_2m_min.slice(0, 7), maxs = d.temperature_2m_max.slice(0, 7);
-    const weekMin = Math.min(...mins), weekMax = Math.max(...maxs);
+    const d = w && w.daily;
+    // 降级源可能不足 7 天或温度段缺失：按实际长度渲染，非有限值不进入比例计算
+    if (!d || !Array.isArray(d.time) || !d.time.length) { $('dailyList').innerHTML = ''; return; }
+    const days = Math.min(7, d.time.length);
+    const rawMin = Array.isArray(d.temperature_2m_min) ? d.temperature_2m_min : [];
+    const rawMax = Array.isArray(d.temperature_2m_max) ? d.temperature_2m_max : [];
+    const goodMin = [], goodMax = [];
+    for (let i = 0; i < days; i++) {
+      const a = Number(rawMin[i]), b = Number(rawMax[i]);
+      if (Number.isFinite(a)) goodMin.push(a);
+      if (Number.isFinite(b)) goodMax.push(b);
+    }
+    const weekMin = goodMin.length ? Math.min(...goodMin) : 0;
+    const weekMax = goodMax.length ? Math.max(...goodMax) : weekMin + 1;
     const span = Math.max(1, weekMax - weekMin);
+    const mins = [], maxs = [];
+    for (let i = 0; i < days; i++) {
+      const a = Number(rawMin[i]), b = Number(rawMax[i]);
+      mins[i] = Number.isFinite(a) ? a : weekMin;
+      maxs[i] = Number.isFinite(b) ? b : mins[i];
+    }
     const todayKey = `${state.selDate.getFullYear()}-${pad(state.selDate.getMonth() + 1)}-${pad(state.selDate.getDate())}`;
 
     let html = '';
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < days; i++) {
       const date = new Date(d.time[i] + 'T00:00:00');
+      if (!Number.isFinite(date.getTime())) continue;
       const info = Weather.summarizeDaily(w, i);
       const label = i === 0 ? '今天' : i === 1 ? '明天' : Almanac.WEEK[date.getDay()].replace('星期', '周');
       const sub = `${date.getMonth() + 1}/${date.getDate()}`;
@@ -437,9 +495,9 @@
         <div class="d-icon">${Icons.svg(info.icon, 30)}</div>
         <div class="d-text">${esc(info.text)}</div>
         <div class="d-temp">
-          <span class="d-low">${Math.round(mins[i])}°</span>
+          <span class="d-low">${SkyUnits.temp(mins[i])}</span>
           <span class="d-bar"><i style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i></span>
-          <span class="d-high">${Math.round(maxs[i])}°</span>
+          <span class="d-high">${SkyUnits.temp(maxs[i])}</span>
         </div>
       </div>`;
     }
@@ -468,7 +526,9 @@
       }
       return 98;
     };
-    $('aqiBarFill').style.left = piecewise(aq.aqi) + '%';
+    const fill = $('aqiBarFill');
+    const trackW = (fill.parentElement && fill.parentElement.clientWidth) || 240;
+    fill.style.transform = `translateX(${(trackW * piecewise(aq.aqi) / 100).toFixed(1)}px)`;
 
     const order = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'];
     $('aqiGrid').innerHTML = order.map(k => {
@@ -490,17 +550,26 @@
     moon: 'modMoon', history: 'modHistory', precipstat: 'modPrecipstat', pressure: 'modPressure',
     cities: 'modCities', radar: 'modRadar', alerts: 'modAlerts', share: 'modShare'
   };
-  /* 动效模式统一开关：body.motion-quiet 时 CSS 动画全部静止（.motion-quiet 规则块）。
-     on=始终播放（默认；无视系统「减少动画」——组件动效是核心体验），
-     system=跟随系统 reduce-motion，off=一律静止。 */
+  /* 动效模式统一开关：body.motion-quiet 时 CSS 动画全部静止（含系统偏好）。
+     system=跟随系统 reduce-motion（默认，无障碍优先）/ on=始终播放 / off=一律静止。 */
   function applyMotion() {
-    const mode = (state.settings && state.settings.motion) || 'on';
+    const mode = ['on', 'system', 'off'].includes(state.settings && state.settings.motion)
+      ? state.settings.motion : 'system';
     const sysReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     document.body.classList.toggle('motion-quiet', mode === 'off' || (mode === 'system' && !!sysReduce));
+    document.body.classList.toggle('motion-override', mode === 'on'); // 显式 on 才绕过系统偏好
+    syncAnimationSuspend(); // canvas 粒子 / 地球 rAF 也必须停，不能只靠 CSS
+  }
+  // 收起为小窗或全静止档：统一挂起两套逐帧循环（隐藏态 FX/Globe 各自还看 document.hidden）
+  function syncAnimationSuspend() {
+    const idle = document.body.classList.contains('motion-quiet') ||
+      (document.body.classList.contains('docked') && !document.body.classList.contains('expanded'));
+    if (window.FX && FX.setSuspended) FX.setSuspended(idle);
+    if (window.Globe && Globe.setSuspended) Globe.setSuspended(idle);
   }
   if (window.matchMedia) {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = () => { if (((state.settings && state.settings.motion) || 'on') === 'system') applyMotion(); };
+    const onChange = () => { if (((state.settings && state.settings.motion) || 'system') === 'system') applyMotion(); };
     if (mq.addEventListener) mq.addEventListener('change', onChange);
     else if (mq.addListener) mq.addListener(onChange);
   }
@@ -576,6 +645,7 @@
     const finish = () => {
       if (!drag) return;
       const d = drag; drag = null;
+      list.classList.remove('sorting');
       d.row.classList.remove('dragging');
       d.rows.forEach(r => { r.style.transform = ''; });
       if (d.target !== d.from) {
@@ -597,6 +667,7 @@
       const rows = [...list.querySelectorAll('.mod-row')];
       drag = { row, rows, startY: e.clientY, from: rows.indexOf(row), target: rows.indexOf(row), h: row.offsetHeight + 6 };
       try { handle.setPointerCapture(e.pointerId); } catch (err) { } // 捕获失败走 blur/lostpointercapture 兜底
+      list.classList.add('sorting'); // 全部行禁过渡，挤位才跟手
       row.classList.add('dragging');
     });
     list.addEventListener('pointermove', e => {
@@ -686,7 +757,7 @@
     if (!w) { $('pillSub').textContent = lunar; return; }
     const c = w.current;
     const info = Weather.codeInfo(c.weather_code, computeIsDay(w, new Date()));
-    $('pillTemp').textContent = Math.round(c.temperature_2m);
+    $('pillTemp').textContent = Math.round(SkyUnits.num(c.temperature_2m));
     $('pillIcon').innerHTML = Icons.svg(info.icon, 30); // 内置光芒旋转/雨滴下落/云朵浮动动画
     $('pillSub').textContent = `${lunar} · ${info.text}`;
   }
@@ -694,19 +765,30 @@
     document.body.classList.toggle('docked', !!s.docked);
     document.body.classList.toggle('expanded', !!s.expanded);
     if (s.docked && !s.expanded) renderPill();
-    FX.setSuspended(!!s.docked && !s.expanded); // 收起为小窗时粒子画布隐藏 → 暂停动画循环
-    if (window.Globe) Globe.setSuspended(!!s.docked && !s.expanded); // 昼夜地球同步暂停
+    syncAnimationSuspend(); // 收起为小窗：粒子画布 + 昼夜地球逐帧循环一起挂起
+    syncUiTimers();         // 收起态不看大窗，时钟/天空定时器同步停
     repairZeroSections(); // 收起/展开是「记住尺寸」清零的实测触发点，状态一变就自检
   }
 
+  // 单个模块渲染失败不得连累整屏：逐模块隔离，坏数据只留空那一块
+  function safeRender(name, fn) {
+    try { fn(); } catch (e) { console.warn('[render] ' + name + ' 渲染失败，已隔离', e); }
+  }
   function renderAll() {
-    try {
-      renderHero(); renderMinutely(); renderHourly(); renderDaily(); renderAQI(); renderLife(); renderPill();
-      if (window.Extra) window.Extra.renderAll(state.data, state.settings, state.loc); // 16 扩展模块
-      updateSky();
-      updateTrayTemp();
-      if (window.Globe) Globe.update(state.loc, state.data && state.data.weather ? state.data.weather.daily : null);
-    } catch (e) { console.error('render error', e); }
+    const d = state.data || {};
+    safeRender('hero', renderHero);
+    safeRender('minutely', renderMinutely);
+    safeRender('hourly', renderHourly);
+    safeRender('daily', renderDaily);
+    safeRender('aqi', renderAQI);
+    safeRender('life', renderLife);
+    safeRender('pill', renderPill);
+    safeRender('extra', () => { if (window.Extra) window.Extra.renderAll(d, state.settings, state.loc); });
+    safeRender('sky', updateSky);
+    safeRender('tray', updateTrayTemp);
+    safeRender('globe', () => {
+      if (window.Globe) Globe.update(state.loc, d.weather ? d.weather.daily : null);
+    });
   }
 
   /* ================= 万年历 ================= */
@@ -819,21 +901,97 @@
     renderLucky();
   }
 
+  /* ================= 主动推送（官方预警 + 天气突变） =================
+     铁律：只在「新增 / 升级」时推、按签名+日期去重、每类每日限额，绝不刷屏。 */
+  const LS = {
+    get(k, fb) { try { const v = localStorage.getItem(k); return v == null ? fb : JSON.parse(v); } catch (e) { return fb; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+  };
+  const dayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const sigOf = s => { let h = 5381; s = String(s || ''); for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return String(h >>> 0); };
+  const quota = (bucket, max) => {
+    const k = 'pushQuota_' + bucket + '_' + dayKey();
+    const n = Number(LS.get(k, 0)) || 0;
+    if (n >= max) return false;
+    LS.set(k, n + 1); return true;
+  };
+  const lvlNum = l => /红/.test(l || '') ? 4 : /橙/.test(l || '') ? 3 : /黄/.test(l || '') ? 2 : /蓝/.test(l || '') ? 1 : 0;
+  function checkWeatherPush(data) {
+    if (!state.settings || state.settings.weatherPush === false || !data || !data.weather) return;
+    const w = data.weather, c = w.current || {};
+    // ① 官方预警：以「类型+正文」为身份，只有新增或等级升级才推（降级/重复静默）
+    const seenKey = 'offAlert_' + dayKey(), seen = LS.get(seenKey, {});
+    let dirty = false;
+    (Array.isArray(data.cnAlerts) ? data.cnAlerts : []).slice(0, 4).forEach(a => {
+      const id = sigOf((a.type || '') + '|' + String(a.text || '').slice(0, 40));
+      const lv = lvlNum(a.level);
+      if (lv > (Number(seen[id]) || 0)) {
+        if (quota('official', 3)) {
+          const title = `云上晴雨 · ${a.type || '气象'}${a.level || ''}预警`;
+          sky.notify(title.slice(0, 60), String(a.text || '请留意最新天气预警').slice(0, 300));
+        }
+        seen[id] = lv; dirty = true;
+      } else if (lv < (Number(seen[id]) || 0)) {
+        seen[id] = lv; dirty = true; // 降级记下来，将来再升级才会再推
+      }
+    });
+    if (dirty) LS.set(seenKey, seen);
+    // ② 天气突变：晴→雨雪雷 / 相邻两次刷新温差 ≥5°C；首次与换城只记快照不推
+    const grp = Weather.codeInfo(Number(c.weather_code) || 0, computeIsDay(w, new Date())).group;
+    const temp = Number(c.temperature_2m);
+    const locKey = state.loc ? state.loc.lat + ',' + state.loc.lon : '';
+    const prev = LS.get('wxSnapshot', null);
+    LS.set('wxSnapshot', { locKey, grp, temp: Number.isFinite(temp) ? temp : null, ts: Date.now() });
+    if (!prev || prev.locKey !== locKey || !Number.isFinite(temp)) return;
+    const wet = grp === 'rain' || grp === 'snow' || grp === 'thunder';
+    const wasWet = prev.grp === 'rain' || prev.grp === 'snow' || prev.grp === 'thunder';
+    const city = (state.loc && state.loc.name) || '当前地点';
+    if (wet && !wasWet && quota('change', 2)) {
+      sky.notify('云上晴雨 · 天气突变', `${city}开始出现${grp === 'snow' ? '降雪' : grp === 'thunder' ? '雷雨' : '降雨'}，出门记得带伞`);
+    } else if (Number.isFinite(prev.temp) && Math.abs(temp - prev.temp) >= 5 && quota('change', 2)) {
+      sky.notify('云上晴雨 · 气温跳变', `${city}气温${temp > prev.temp ? '上升' : '下降'} ${Math.round(Math.abs(temp - prev.temp))}°C，注意增减衣物`);
+    }
+  }
+  function updateTrayInfo() {
+    if (!state.data || !state.data.weather || !state.data.weather.current) return;
+    const w = state.data.weather, c = w.current;
+    const info = Weather.codeInfo(Number(c.weather_code) || 0, computeIsDay(w, new Date()));
+    const fu = state.fetchedAt || new Date();
+    const text = `${SkyUnits.temp(c.temperature_2m)} ${info.text} · ${(state.loc && state.loc.name) || '天气'} · 更新 ${pad(fu.getHours())}:${pad(fu.getMinutes())}`;
+    try { sky.trayInfo(text); } catch (e) { }
+  }
+
   /* ================= 数据加载 ================= */
   let loadSeq = 0;   // 请求序号：丢弃过期响应（快速切换地点时旧地点数据不得覆盖新地点）
-  async function loadWeather() {
+  async function loadWeather(force) {
     if (!state.loc) return;
+    const nowMs = Date.now();
+    // 失败指数退避（上限 5 分钟）+ 同秒双触发去重：定时刷新、恢复补刷、手动刷新可能撞在一起
+    const gap = state.failCount ? Math.min(5 * 60 * 1000, 15000 * Math.pow(2, Math.min(state.failCount, 5))) : 2000;
+    if (!force && nowMs - state.lastFetchTry < gap) return;
+    state.lastFetchTry = nowMs;
     const seq = ++loadSeq;
     const res = await sky.fetchWeather(state.loc.lat, state.loc.lon, state.loc.name, state.loc.code);
     if (seq !== loadSeq) return; // 已有更新的请求在途/完成，本次响应过期作废
     if (res && res.error) {
+      state.failCount = Math.min(state.failCount + 1, 6);
       $('condText').textContent = '网络异常';
-      $('hourlySub').textContent = '点击右上角刷新重试';
+      $('hourlySub').textContent = '正在自动重试，也可点右上角刷新';
       return;
     }
+    if (res && res.stale) {
+      // 全源失败但主进程留有上一份好数据：续用、不更新 fetchedAt（让「数据已过期」提示如实生效）
+      state.failCount = Math.min(state.failCount + 1, 6);
+      state.data = res;
+      renderAll();
+      return;
+    }
+    state.failCount = 0;
     state.data = res;
     state.fetchedAt = new Date();
     renderAll();
+    checkWeatherPush(res);
+    updateTrayInfo();
   }
 
   /* ================= 设置面板 ================= */
@@ -842,6 +1000,14 @@
     renderLocList();
   }
   function closePanel() { $('settingsPanel').classList.remove('open'); }
+
+  // 地点变更串行化：并发 IPC 若各拿旧快照，会出现「丢地点 / 城市回退」
+  let locQueue = Promise.resolve();
+  function serializedLoc(fn) {
+    const run = locQueue.then(fn, fn);
+    locQueue = run.catch(() => {});
+    return run;
+  }
 
   function renderLocList() {
     const locs = state.settings.locations || [];
@@ -861,37 +1027,44 @@
     $('locList').querySelectorAll('[data-del]').forEach(el => {
       el.addEventListener('click', async e => {
         e.stopPropagation();
-        const locs = state.settings.locations.filter(l => l.id !== el.dataset.del);
-        const patch = { locations: locs };
-        if (state.settings.activeId === el.dataset.del) patch.activeId = locs.length ? locs[0].id : null;
-        state.settings = await sky.updateSettings(patch);
-        if (patch.activeId) await switchLocation(patch.activeId);
-        renderLocList();
+        const needSwitch = await serializedLoc(async () => {
+          const oldActive = state.settings.activeId;
+          const locs = (state.settings.locations || []).filter(l => l.id !== el.dataset.del);
+          const nextId = oldActive === el.dataset.del ? (locs.length ? locs[0].id : null) : oldActive;
+          state.settings = await sky.updateSettings({ locations: locs, activeId: nextId });
+          renderLocList();
+          return nextId !== oldActive ? nextId : null;
+        });
+        if (needSwitch) await switchLocation(needSwitch);
       });
     });
   }
 
   async function switchLocation(id) {
-    const loc = (state.settings.locations || []).find(l => l.id === id);
-    if (!loc) return;
-    state.settings = await sky.updateSettings({ activeId: id });
-    state.loc = loc;
-    await loadWeather();
-    renderLocList();
-    closePanel();
+    return serializedLoc(async () => {
+      const loc = (state.settings.locations || []).find(l => l.id === id);
+      if (!loc) return;
+      state.settings = await sky.updateSettings({ activeId: id });
+      state.loc = loc;
+      await loadWeather(true); // 换城必须立刻取数，不能被刷新去重窗口挡掉
+      renderLocList();
+      closePanel();
+    });
   }
 
   async function addLocation(loc, isAuto) {
-    const id = 'loc_' + Date.now();
-    const entry = Object.assign({ id }, loc, { auto: !!isAuto });
-    let locs = state.settings.locations || [];
-    if (isAuto) locs = locs.filter(l => !l.auto);   // 自动定位只保留一个
-    locs.push(entry);
-    state.settings = await sky.updateSettings({ locations: locs, activeId: id });
-    state.loc = entry;
-    await loadWeather();
-    renderLocList();
-    closePanel();
+    return serializedLoc(async () => {
+      const id = 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      const entry = Object.assign({ id }, loc, { auto: !!isAuto });
+      let locs = (state.settings.locations || []).slice();
+      if (isAuto) locs = locs.filter(l => !l.auto);   // 自动定位只保留一个
+      locs.push(entry);
+      state.settings = await sky.updateSettings({ locations: locs, activeId: id });
+      state.loc = entry;
+      await loadWeather(true); // 新增地点同样强制刷新
+      renderLocList();
+      closePanel();
+    });
   }
 
   /* ================= 软件更新（OTA） ================= */
@@ -997,7 +1170,7 @@
       btn.classList.remove('spin-once');
       void btn.offsetWidth;
       btn.classList.add('spin-once');
-      await loadWeather();
+      await loadWeather(true); // 手动刷新跳过退避/去重
     });
 
     $('btnSearch').addEventListener('click', doSearch);
@@ -1023,6 +1196,45 @@
       state.settings = await sky.updateSettings({ refreshMinutes: v });
       startRefreshTimer();
     });
+    // 单位切换：写盘后立即全量重绘（主窗 / 小窗 / 托盘 / 分享卡 / 扩展模块共用 SkyUnits）
+    $('unitSelect').addEventListener('change', async e => {
+      state.settings = await sky.updateSettings({ unit: e.target.value });
+      renderAll();
+      updateTrayInfo();
+    });
+    $('windUnitSelect').addEventListener('change', async e => {
+      state.settings = await sky.updateSettings({ windUnit: e.target.value });
+      renderAll();
+    });
+    // 本地键盘操作：无边框窗没有菜单栏，Esc/F5/Ctrl+,/Alt+←→ 都可不开鼠标完成
+    document.addEventListener('keydown', e => {
+      if (e.isComposing || e.keyCode === 229) return; // IME 守卫
+      if (e.key === 'Escape') {
+        closePanel();
+        if (e.target && e.target.blur) e.target.blur();
+        return;
+      }
+      const tag = String((e.target && e.target.tagName) || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'r')) {
+        e.preventDefault(); loadWeather(true); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); openPanel(); return; }
+      if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const locs = (state.settings && state.settings.locations) || [];
+        if (!locs.length) return;
+        e.preventDefault();
+        const i = locs.findIndex(l => l.id === (state.settings && state.settings.activeId));
+        const next = locs[(i + (e.key === 'ArrowRight' ? 1 : -1) + locs.length) % locs.length];
+        if (next) switchLocation(next.id);
+      }
+    });
+    // 托盘右键：立即刷新 / 切换城市（窗口可能隐藏，直接后台执行）
+    if (sky.onTrayAction) sky.onTrayAction(a => {
+      if (!a) return;
+      if (a.type === 'refresh') loadWeather(true);
+      else if (a.type === 'switch' && a.id) switchLocation(a.id);
+    });
     $('chkTop').addEventListener('change', async e => {
       state.settings = await sky.updateSettings({ alwaysOnTop: e.target.checked });
     });
@@ -1040,7 +1252,10 @@
     $('chkBrief').addEventListener('change', async e => {
       state.settings = await sky.updateSettings({ brief: e.target.checked });
     });
-    // 动效模式：on=始终播放（默认，无视系统「减少动画」）/ system=跟随系统 / off=静止
+    $('chkPush').addEventListener('change', async e => {
+      state.settings = await sky.updateSettings({ weatherPush: e.target.checked });
+    });
+    // 动效模式：system=跟随系统（默认）/ on=始终播放 / off=静止
     $('motionSelect').addEventListener('change', async e => {
       state.settings = await sky.updateSettings({ motion: e.target.value });
       applyMotion();
@@ -1098,11 +1313,14 @@
     });
   }
 
+  let searchSeq = 0;
   async function doSearch() {
     const q = $('searchInput').value.trim();
     if (!q) return;
+    const seq = ++searchSeq;
     $('searchResults').innerHTML = '<div class="s-item">搜索中…</div>';
     const res = await sky.geoSearch(q);
+    if (seq !== searchSeq) return; // 连续搜索时旧关键词的迟到回包不得覆盖新结果
     if (res && res.error) {
       $('searchResults').innerHTML = `<div class="s-item">搜索失败：${esc(res.error)}</div>`;
       return;
@@ -1125,6 +1343,28 @@
     });
   }
 
+  /* UI 定时器（时钟 1s / 天空 60s）：隐藏到托盘、收起为小窗时全部停掉。
+     此前两个 setInterval 无 id、无清理，后台仍每秒写 DOM、每分钟走完整主题链路。 */
+  let clockTimer = null, skyTimer = null;
+  function startUiTimers() {
+    if (clockTimer == null) clockTimer = setInterval(tickClock, 1000);
+    if (skyTimer == null) skyTimer = setInterval(updateSky, 60 * 1000);
+  }
+  function stopUiTimers() {
+    if (clockTimer != null) { clearInterval(clockTimer); clockTimer = null; }
+    if (skyTimer != null) { clearInterval(skyTimer); skyTimer = null; }
+    clearTimeout(flipTimer); flipTimer = null;
+  }
+  function syncUiTimers() {
+    // 只在「隐藏到托盘」时停：吸顶小窗虽然收起大窗，但 pill 上的时间/秒仍在显示，时钟不能冻住
+    if (document.hidden) stopUiTimers();
+    else {
+      const wasStopped = clockTimer == null;
+      startUiTimers();
+      // 只在「从停止态恢复」时补一次主题翻转重排；悬停展收不该反复触发 paintSky
+      if (wasStopped && state.data) updateSky();
+    }
+  }
   function startRefreshTimer() {
     clearInterval(state.refreshTimer);
     state.refreshTimer = null;
@@ -1134,6 +1374,8 @@
   }
   // 隐藏（收起到托盘）→ 暂停定时刷新；重新显示 → 恢复定时 + 数据过期立即补一刷
   document.addEventListener('visibilitychange', () => {
+    syncUiTimers();
+    syncAnimationSuspend();
     if (document.hidden) {
       clearInterval(state.refreshTimer);
       state.refreshTimer = null;
@@ -1151,6 +1393,13 @@
      透明窗上每帧重采样桌面是掉帧 + 频闪的主因，停下后自动恢复玻璃效果。 */
   function markScrolling(el) {
     if (!el.classList.contains('scrolling')) el.classList.add('scrolling');
+    // 设置面板的 blur 挂在父级 .panel 上，滚动期必须同步关掉（与 el 同一 180ms 恢复节拍）
+    const panel = el.classList.contains('panel-body') ? document.querySelector('.panel') : null;
+    if (panel) {
+      panel.classList.add('scrolling');
+      clearTimeout(panel._scrollEndTimer);
+      panel._scrollEndTimer = setTimeout(() => panel.classList.remove('scrolling'), 180);
+    }
     clearTimeout(el._scrollEndTimer);
     el._scrollEndTimer = setTimeout(() => {
       el.classList.remove('scrolling');
@@ -1166,9 +1415,21 @@
 
     function step(now) {
       raf = 0;
-      // rAF 被系统掐断（窗口遮挡/降频）再恢复时惯性上下文已过期：放弃本轮插值，
-      // 否则会按冻结的旧 target 把视图拽回去
-      if (lastStep && now - lastStep > 250) { animating = false; target = el.scrollTop; return; }
+      // rAF 被系统掐断（窗口遮挡/降频）再恢复时惯性上下文已过期：不能按冻结的旧 target 插值，
+      // 否则会把视图拽回去。但「短暂掉帧」不能让这一格滚轮停在半路（实测曾只走 12px）：
+      // 250ms~2s 内把目标一次落地；只有长时间挂起（窗口遮挡数分钟）才彻底放弃。
+      if (lastStep && now - lastStep > 250) {
+        const gap = now - lastStep;
+        if (gap < 2000) {
+          const safe = Math.min(Math.max(0, target), maxTop());
+          selfTop = safe;
+          el.scrollTop = safe;
+        } else {
+          target = el.scrollTop;
+        }
+        animating = false;
+        return;
+      }
       lastStep = now;
       if (target > maxTop()) target = maxTop();   // content-visibility 让 scrollHeight 动态变化，逐帧钳制
       const cur = el.scrollTop;
@@ -1374,18 +1635,27 @@
   /* ================= 启动 ================= */
   async function init() {
     tickClock();
-    setInterval(tickClock, 1000);
-    setInterval(updateSky, 60 * 1000);
+    startUiTimers();
 
     state.settings = await sky.getSettings();
+    // 推送去重键按日期滚动：启动清一次昨天的，避免 localStorage 长期堆积
+    try {
+      const tk = dayKey();
+      Object.keys(localStorage)
+        .filter(k => /^(pushQuota_|offAlert_|brief_)/.test(k) && k.indexOf(tk) === -1)
+        .forEach(k => localStorage.removeItem(k));
+    } catch (e) { }
     $('refreshSelect').value = String(state.settings.refreshMinutes || 10);
+    $('unitSelect').value = state.settings.unit === 'f' ? 'f' : 'c';
+    $('windUnitSelect').value = ['level', 'kmh', 'ms'].includes(state.settings.windUnit) ? state.settings.windUnit : 'level';
     $('chkTop').checked = !!state.settings.alwaysOnTop;
     $('chkAuto').checked = !!state.settings.autoLaunch;
     $('chkEdgeDock').checked = state.settings.edgeDock !== false;
     $('chkTrayTemp').checked = state.settings.trayTemp !== false;
-    $('motionSelect').value = (state.settings.motion === 'system' || state.settings.motion === 'off') ? state.settings.motion : 'on';
+    $('motionSelect').value = ['on', 'system', 'off'].includes(state.settings.motion) ? state.settings.motion : 'system';
     applyMotion();
     $('chkBrief').checked = state.settings.brief !== false;
+    $('chkPush').checked = state.settings.weatherPush !== false;
     for (const k of MOD_KEYS) {
       const chk = $('chkMod' + k.charAt(0).toUpperCase() + k.slice(1));
       if (chk) chk.checked = (state.settings.modules || {})[k] !== false;
@@ -1471,6 +1741,8 @@
     // 天气
     await loadWeather();
     startRefreshTimer();
+    // 断网重连立即补刷（跳过失败退避）；睡眠唤醒由 tickClock 的过期检查兜底
+    window.addEventListener('online', () => loadWeather(true));
   }
 
   // 天空动画先跑起来（数据回来前也有氛围）

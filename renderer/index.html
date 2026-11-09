@@ -192,7 +192,10 @@
         <div class="x-body">
           <img id="sharePreview" class="x-share-prev" alt="天气卡片预览" />
           <canvas id="shareCanvas" hidden></canvas>
-          <button class="pill-btn sm wide" id="btnSaveShare">保存天气卡片</button>
+          <div class="share-btns">
+            <button class="pill-btn sm wide" id="btnSaveShare">保存天气卡片</button>
+            <button class="pill-btn sm wide" id="btnCopyShare">复制图片</button>
+          </div>
         </div>
       </div>
     </section>
@@ -266,6 +269,19 @@
         <option value="60">每 60 分钟</option>
       </select>
 
+      <h4>单位</h4>
+      <div class="unit-row">
+        <select id="unitSelect" class="select" aria-label="温度单位">
+          <option value="c">摄氏度 °C</option>
+          <option value="f">华氏度 °F</option>
+        </select>
+        <select id="windUnitSelect" class="select" aria-label="风速单位">
+          <option value="level">风力等级（级）</option>
+          <option value="kmh">公里/时 km/h</option>
+          <option value="ms">米/秒 m/s</option>
+        </select>
+      </div>
+
       <h4>窗口</h4>
       <label class="check"><input type="checkbox" id="chkTop" /> 窗口置顶显示</label>
       <label class="check"><input type="checkbox" id="chkAuto" /> 开机自动启动</label>
@@ -274,11 +290,12 @@
       <h4>提醒与托盘</h4>
       <label class="check"><input type="checkbox" id="chkTrayTemp" /> 托盘图标显示实时温度</label>
       <label class="check"><input type="checkbox" id="chkBrief" /> 天气早晚报（每天 8:00 / 20:00 通知播报）</label>
+      <label class="check"><input type="checkbox" id="chkPush" /> 官方预警 / 天气突变主动推送（仅新增或升级时通知）</label>
 
       <h4>动效</h4>
       <select id="motionSelect" class="select">
-        <option value="on">开启（推荐，卡片动画始终播放）</option>
-        <option value="system">跟随系统（系统关闭动画则静止）</option>
+        <option value="on">开启（始终播放，无视系统设置）</option>
+        <option value="system">跟随系统（推荐，系统关闭动画则静止）</option>
         <option value="off">关闭（全部静止）</option>
       </select>
 
@@ -371,6 +388,7 @@
       <div class="about">
         <div class="about-name">云上晴雨天气台 <em id="panelVersion"></em></div>
         <div class="about-author">作者：大软子哥哥</div>
+        <div class="about-keys">快捷键：Esc 关设置 · F5 刷新 · Ctrl+, 开设置 · Alt+←/→ 切换城市</div>
       </div>
     </div>
   </div>

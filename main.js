@@ -3,7 +3,7 @@
  * 云上晴雨 - 宫崎骏风格 Windows 桌面天气插件
  * Electron 主进程：无边框透明窗体 / 置顶 / 托盘 / 位置记忆 / 数据接口代理
  */
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, Notification, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -28,18 +28,32 @@ let settings = {
   refreshMinutes: 10,
   alwaysOnTop: true,
   autoLaunch: false,
-  unit: 'c',
   winPos: null,
   winSize: null,
   edgeDock: true,       // 顶部吸附：拖到屏幕顶端自动收起为温度小窗
   docked: false,        // 当前是否处于吸顶收起状态
   dockX: null,          // 吸顶小窗的 x 位置记忆
   trayTemp: true,       // 托盘温度图标：托盘图标实时显示当前温度
-  brief: true           // 天气早晚报：8:00 / 20:00 系统通知播报当天概况
+  brief: true,          // 天气早晚报：8:00 / 20:00 系统通知播报当天概况
+  weatherPush: true,    // 官方预警 / 天气突变主动推送（去重 + 仅升级触发）
+  windUnit: 'level',    // 风速单位：level 蒲福级 / kmh / ms
+  unit: 'c'             // 温度单位：c 摄氏 / f 华氏
 };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
-  try { Object.assign(settings, JSON.parse(fs.readFileSync(settingsFile(), 'utf8'))); } catch (e) { /* 首次运行 */ }
+  const f = settingsFile();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('bad shape');
+    Object.assign(settings, parsed);
+  } catch (e) {
+    // 文件损坏（断电/写到一半崩溃）：先留现场 .broken，再尝试从上次原子写的 .bak 恢复；
+    // 绝不能静默当「首次运行」并用默认值全量覆盖，否则用户的地点/设置不可恢复地丢失。
+    try {
+      if (fs.existsSync(f)) fs.copyFileSync(f, f + '.broken');
+      if (fs.existsSync(f + '.bak')) Object.assign(settings, JSON.parse(fs.readFileSync(f + '.bak', 'utf8')));
+    } catch (e2) { /* 备份也坏：保留默认值，但 .broken 现场仍在 */ }
+  }
   // v1.0.11 一次性自愈：旧版存在「顶部吸附」被误关导致小窗丢失的反馈，重新启用一次；
   // 此后完全以用户在设置面板的选择为准（迁移标记 ver，只执行一次）
   if (settings.ver !== 3) {
@@ -51,7 +65,14 @@ function loadSettings() {
 }
 function persist(patch = {}) {
   Object.assign(settings, patch);
-  try { fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2), 'utf8'); } catch (e) { }
+  const f = settingsFile(), tmp = f + '.tmp';
+  const data = JSON.stringify(settings, null, 2);
+  try {
+    fs.writeFileSync(tmp, data, 'utf8');
+    try { if (fs.existsSync(f)) fs.copyFileSync(f, f + '.bak'); } catch (e) { } // 上一份好文件留作恢复源
+    try { fs.renameSync(tmp, f); } catch (e) { fs.writeFileSync(f, data, 'utf8'); } // 原子替换，异常兜底
+  } catch (e) { /* 用户数据目录不可写时不能让主进程崩 */ }
+  finally { try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (e) { } }
 }
 /* 地点层级自愈：旧版本解析有误（如"慈溪"存成了"宁波"、港澳台繁体层级错位），
    每次启动用 display 地址链重推导一遍（幂等，只在有变化时写盘） */
@@ -83,6 +104,28 @@ function migrateLocations() {
    逐时/分钟级/UV/花粉等国内无免密钥源的字段仍由 Open-Meteo 提供；
    国内源失败自动整体降级 Open-Meteo（返回结构里 sources 如实标注各段来源）。 */
 const cnSrc = require('./cn-source.js');
+let lastGoodWeather = null; // 全源失败时续用上一份好数据（带 stale 标记），避免界面整屏空白
+/* OM 天气整体不可用时的最小同构骨架：国内源实况/7 天仍可单独出图。
+   逐时/分钟级等国内无源字段留空数组（渲染层逐模块隔离，只留空那一块，不再整屏停摆）。 */
+function cnFallbackWeather(cn) {
+  const c = Object.assign({}, cn.current || {});
+  if (!Number.isFinite(c.temperature_2m)) c.temperature_2m = 0;
+  if (!Number.isFinite(c.apparent_temperature)) c.apparent_temperature = c.temperature_2m;
+  ['relative_humidity_2m', 'wind_speed_10m', 'wind_direction_10m', 'pressure_msl', 'weather_code']
+    .forEach(k => { if (!Number.isFinite(c[k])) c[k] = 0; });
+  if (c.is_day == null) c.is_day = 1;
+  return {
+    current: c,
+    daily: cn.daily || { time: [], weather_code: [], temperature_2m_max: [], temperature_2m_min: [], sunrise: [], sunset: [] },
+    hourly: {
+      time: [], weather_code: [], temperature_2m: [], apparent_temperature: [],
+      precipitation_probability: [], precipitation: [], is_day: [], uv_index: [],
+      wind_speed_10m: [], wind_direction_10m: [], relative_humidity_2m: [], visibility: [],
+      cloud_cover_low: [], cloud_cover_mid: [], cloud_cover_high: [], pressure_msl: []
+    },
+    minutely_15: null
+  };
+}
 async function fetchWeather(lat, lon, name, code) {
   const f = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,weather_code,` +
@@ -98,22 +141,44 @@ async function fetchWeather(lat, lon, name, code) {
     `&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,us_aqi,european_aqi` +
     `&hourly=alder_pollen,birch_pollen,grass_pollen,ragweed_pollen` +
     `&timezone=auto&forecast_days=3`;
-  // 三路并行：OM 天气 + OM 空气 + 国内源（失败返回 null 不拖垮主流程）
+  // 三路并行：OM 天气 + OM 空气 + 国内源（任一路失败都返回 null，不拖垮主流程）
   const [omPair, cn] = await Promise.all([
-    Promise.all([got(f, 15000), got(a, 15000).catch(() => null)]),
+    Promise.all([got(f, 15000).catch(() => null), got(a, 15000).catch(() => null)]),
     (name || code) ? cnSrc.fetchCn(name, code).catch(() => null) : Promise.resolve(null)
   ]);
-  const [w, q] = omPair;
+  const omOK = !!omPair[0];
+  let [w, q] = omPair;
+  // 反向降级：此前 OM 天气一挂 Promise.all 就整体 reject，国内源已成功的数据也全丢
+  if (!w && cn && (cn.current || cn.daily)) {
+    w = cnFallbackWeather(cn);
+    if (!q && cn.air) q = { current: { pm2_5: cn.air.pm2_5, pm10: cn.air.pm10 }, hourly: { time: [] } };
+  }
+  // 所有源都失败：绝不能返回「成功形状 + weather:null」（UI 会整屏空掉）。
+  // 有上一份好数据就带 stale 标记续用并保持原始 fetchedAt；首次启动则明确报错，交给失败退避。
+  if (!w) {
+    if (lastGoodWeather) return Object.assign({}, lastGoodWeather, { stale: true });
+    throw new Error('天气数据源均不可用，请稍后重试');
+  }
   const sources = cnSrc.mergeCn(w, q, cn);
-  return { weather: w, air: q, fetchedAt: Date.now(), sources, cnAlerts: cn ? cn.alerts : [], cnZs: cn ? cn.zs : null };
+  if (!omOK) {
+    // 来源标注如实：没有 OM 就别把逐时/分钟级标成 Open-Meteo
+    sources.hourly = '暂不可用'; sources.minutely = '暂不可用';
+    if (!cn || !cn.current) sources.current = '暂不可用';
+    if (!cn || !cn.daily) sources.daily = '暂不可用';
+    if (!omPair[1]) sources.air = cn && cn.air ? 'itboy 聚合（仅 PM）' : '暂不可用';
+  }
+  const result = { weather: w, air: q, fetchedAt: Date.now(), sources, cnAlerts: cn ? cn.alerts : [], cnZs: cn ? cn.zs : null };
+  lastGoodWeather = result;
+  return result;
 }
 
 /* ---------------- 历史气候（open-meteo archive，24h 缓存） ----------------
    两路数据：hist=近10年「今天」均温（常年对比/去年今天），recent=近35天降水（周月统计） */
-const archiveCache = { key: '', ts: 0, data: null };
+const archiveCache = new Map(); // key -> { ts, data }（按地点分桶，旧城迟到回包不再挤掉新城缓存）
 async function fetchArchive(lat, lon) {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
-  if (archiveCache.key === key && Date.now() - archiveCache.ts < 24 * 3600 * 1000 && archiveCache.data) return archiveCache.data;
+  const hit = archiveCache.get(key);
+  if (hit && Date.now() - hit.ts < 24 * 3600 * 1000 && hit.data) return hit.data;
   const now = new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
@@ -126,24 +191,32 @@ async function fetchArchive(lat, lon) {
     `&start_date=${iso(new Date(now.getTime() - 35 * 864e5))}&end_date=${iso(new Date(now.getTime() - 6 * 864e5))}` +
     `&daily=precipitation_sum&timezone=auto`;
   const [hist, recent] = await Promise.all([got(histUrl, 20000), got(recentUrl, 20000).catch(() => null)]);
-  archiveCache.key = key; archiveCache.ts = Date.now(); archiveCache.data = { hist, recent, fetchedAt: Date.now() };
-  return archiveCache.data;
+  const data = { hist, recent, fetchedAt: Date.now() };
+  archiveCache.set(key, { ts: Date.now(), data });
+  if (archiveCache.size > 12) archiveCache.delete(archiveCache.keys().next().value); // 常驻应用缓存不无限增长
+  return data;
 }
 
 /* ---------------- 降水雷达帧索引（RainViewer，失败返回 null 优雅降级） ---------------- */
 let radarCache = { ts: 0, data: null };
+let radarInflight = null;
 async function fetchRadarFrames() {
-  if (Date.now() - radarCache.ts < 5 * 60 * 1000 && radarCache.data) return radarCache.data;
-  try {
-    const meta = await got('https://api.rainviewer.com/public/weather-maps.json', 12000);
-    const past = (meta.radar && meta.radar.past || []).slice(-8);
-    const nowcast = (meta.radar && meta.radar.nowcast || []).slice(0, 3);
-    radarCache = { ts: Date.now(), data: { host: meta.host || 'https://tilecache.rainviewer.com', past, nowcast } };
-    return radarCache.data;
-  } catch (e) {
-    radarCache = { ts: Date.now(), data: null };
-    return null;
-  }
+  // 成功与失败都在 TTL 内短路：服务挂掉期间不得每次重发（负缓存此前因要求 data 非空而完全失效）
+  if (Date.now() - radarCache.ts < 5 * 60 * 1000) return radarCache.data;
+  if (radarInflight) return radarInflight; // 并发请求共享一次回包
+  radarInflight = (async () => {
+    try {
+      const meta = await got('https://api.rainviewer.com/public/weather-maps.json', 12000);
+      const past = (meta.radar && meta.radar.past || []).slice(-8);
+      const nowcast = (meta.radar && meta.radar.nowcast || []).slice(0, 3);
+      radarCache = { ts: Date.now(), data: { host: meta.host || 'https://tilecache.rainviewer.com', past, nowcast } };
+      return radarCache.data;
+    } catch (e) {
+      radarCache = { ts: Date.now(), data: null };
+      return null;
+    }
+  })().finally(() => { radarInflight = null; });
+  return radarInflight;
 }
 
 /* ---------------- 多城市轻量实况（分享/关注列表用） ----------------
@@ -327,8 +400,9 @@ function handleDockHover(inside) {
 function ensureHoverPoll() {
   if (hoverPoll) return;
   hoverPoll = setInterval(() => {
-    if (!win || win.isDestroyed() || !settings.docked || settings.edgeDock === false) return;
-    if (!win.isVisible()) return; // 隐藏到托盘时不空转光标轮询
+    if (!win || win.isDestroyed()) { stopHoverPoll(); return; } // 窗口销毁后不许残留 interval
+    if (!settings.docked || settings.edgeDock === false) return;
+    if (!win.isVisible()) { stopHoverPoll(); return; } // 隐藏到托盘时不空转光标轮询
     const b = win.getBounds();
     const p = screen.getCursorScreenPoint();
     // 收起态只认小窗矩形；展开态认整个窗口
@@ -418,7 +492,7 @@ function checkSnap() {
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings);
   // 设置写入白名单：渲染层只允许改这几个键（防任意键注入/原型污染/updateUrl 被劫持到恶意更新源）
-  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'modules', 'modulesOrder', 'cities', 'alerts', 'motion']);
+  const SETTINGS_KEYS = new Set(['locations', 'activeId', 'autoLocate', 'refreshMinutes', 'alwaysOnTop', 'autoLaunch', 'unit', 'windUnit', 'edgeDock', 'updateUrl', 'trayTemp', 'brief', 'weatherPush', 'modules', 'modulesOrder', 'cities', 'alerts', 'motion']);
   const MODULE_KEYS = new Set(['globe', 'hourly', 'daily', 'aqi', 'life', 'almanac',
     'uv', 'pollen', 'wind', 'visib', 'dress', 'carwash', 'dry', 'cold',
     'moon', 'history', 'precipstat', 'pressure', 'cities', 'radar', 'alerts', 'share']);
@@ -432,13 +506,38 @@ function registerIpc() {
         const v = patch[k];
         if (k === 'updateUrl') {
           const u = String(v == null ? '' : v).trim().slice(0, 500);
-          if (u && !/^https?:\/\//i.test(u)) continue;
-          safe.updateUrl = u;
+          if (!u) { safe.updateUrl = ''; continue; }
+          let parsed = null;
+          try { parsed = new URL(u); } catch (e) { /* 非法 URL */ }
+          // 更新源决定安装包与 sha512：只收 https；本地调试源放行明文 localhost。
+          // 同时拒绝 userinfo（防 https://evil@good.com 之类解析差异）。
+          const local = parsed && /^(127\.0\.0\.1|localhost|\[::1\])$/i.test(parsed.hostname);
+          if (!parsed || parsed.username || parsed.password ||
+              (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:'))) continue;
+          safe.updateUrl = parsed.href.replace(/\/+$/, '');
+        } else if (k === 'unit') {
+          if (v === 'c' || v === 'f') safe.unit = v;      // 字符串键必须显式分支，否则静默丢弃
+        } else if (k === 'windUnit') {
+          if (v === 'level' || v === 'kmh' || v === 'ms') safe.windUnit = v;
         } else if (k === 'refreshMinutes') {
           const n = Number(v);
           if (Number.isFinite(n) && n >= 1 && n <= 1440) safe.refreshMinutes = n;
         } else if (k === 'locations') {
-          if (Array.isArray(v)) safe.locations = v;
+          // 地点数组：逐项白名单 + 数值化 + 上限，别把任意大对象原样落盘（照 cities/alerts 的清洗范式）
+          if (Array.isArray(v)) {
+            safe.locations = v.slice(0, 30).map((l, i) => ({
+              id: String((l && l.id) || 'loc_' + i).slice(0, 80),
+              name: String((l && l.name) || '').slice(0, 60),
+              parent: String((l && l.parent) || '').slice(0, 60),
+              detail: String((l && l.detail) || '').slice(0, 120),
+              admin1: String((l && l.admin1) || '').slice(0, 60),
+              display: String((l && l.display) || '').slice(0, 160),
+              type: String((l && l.type) || '').slice(0, 40),
+              code: String((l && l.code) || '').slice(0, 40),
+              lat: Number(l && l.lat), lon: Number(l && l.lon),
+              auto: !!(l && l.auto)
+            })).filter(l => Number.isFinite(l.lat) && Number.isFinite(l.lon));
+          }
         } else if (k === 'activeId') {
           safe.activeId = v == null ? null : String(v).slice(0, 80);
         } else if (k === 'modules') {
@@ -488,12 +587,16 @@ function registerIpc() {
         } else if (k === 'motion') {
           // 动效模式：枚举白名单（字符串键必须显式分支，否则被 typeof boolean 分支静默丢弃）
           if (v === 'on' || v === 'system' || v === 'off') safe.motion = v;
-        } else if (typeof v === 'boolean' || k === 'unit' || k === 'autoLocate') {
+        } else if (typeof v === 'boolean' || k === 'autoLocate') {
           safe[k] = v;
         }
       }
     }
     persist(safe);
+    // 地点/置顶变化同步重建托盘菜单（切城市子菜单的 radio 勾选态）
+    if (Object.prototype.hasOwnProperty.call(safe, 'locations') ||
+        Object.prototype.hasOwnProperty.call(safe, 'activeId') ||
+        Object.prototype.hasOwnProperty.call(safe, 'alwaysOnTop')) refreshTrayMenu();
     if (win) {
       if (typeof safe.alwaysOnTop === 'boolean') applyTopmost();
       applyAutoLaunch(settings.autoLaunch);
@@ -531,9 +634,23 @@ function registerIpc() {
   // 吸顶小窗悬停：进入 → 展开完整插件；离开 → 延时收起
   ipcMain.on('dock:hover', (_e, inside) => handleDockHover(!!inside));
 
+  let weatherInflight = null; // { key, promise }：同地点并发刷新共享一次网络请求
   ipcMain.handle('weather:get', (_e, p) => {
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve({ error: '坐标无效' });
-    return fetchWeather(p.lat, p.lon, p.name, p.code).catch(err => ({ error: String(err.message || err) }));
+    const key = [p.lat, p.lon, p.name || '', p.code || ''].join('|');
+    if (weatherInflight && weatherInflight.key === key) return weatherInflight.promise;
+    const promise = (async () => {
+      // 全源瞬时失败（限流/抖动）：整体重试一次，短退避，不放大单源重试
+      let lastErr;
+      for (let i = 0; i < 2; i++) {
+        try { return await fetchWeather(p.lat, p.lon, p.name, p.code); }
+        catch (e) { lastErr = e; if (i === 0) await new Promise(r => setTimeout(r, 900)); }
+      }
+      throw lastErr;
+    })().catch(err => ({ error: String(err.message || err) }));
+    weatherInflight = { key, promise };
+    promise.finally(() => { if (weatherInflight && weatherInflight.promise === promise) weatherInflight = null; });
+    return promise;
   });
 
   ipcMain.handle('weather:archive', (_e, p) => {
@@ -546,6 +663,14 @@ function registerIpc() {
     return fetchCityCurrent(p.lat, p.lon, p.name, p.code).catch(() => null);
   });
   ipcMain.handle('png:save', (_e, dataURL) => savePng(dataURL).catch(() => null));
+  // 分享卡一键复制到剪贴板（粘贴到聊天窗口最快的路径）
+  ipcMain.handle('png:copy', (_e, dataURL) => {
+    const s = String(dataURL || '');
+    if (!/^data:image\/png;base64,/.test(s) || s.length > 12 * 1024 * 1024) return false;
+    try { clipboard.writeImage(nativeImage.createFromDataURL(s)); return true; } catch (e) { return false; }
+  });
+  // 托盘动态信息：悬停即见「温度 · 天气 · 城市 · 更新时间」，并顺带重建右键菜单
+  ipcMain.on('tray:info', (_e, text) => refreshTrayMenu(String(text == null ? '' : text)));
 
   ipcMain.handle('geo:search', async (_e, q) => {
     // 双源并行合并 + 智能排序（geo.searchPlaces）；toy1（中国天气网地名库）元数据作校验信号：
@@ -617,19 +742,20 @@ function registerIpc() {
 
   ipcMain.handle('win:action', (_e, act) => {
     if (!win) return;
-    if (act === 'close') win.hide();
-    else if (act === 'quit') { win = null; app.quit(); }
-    else if (act === 'hide') win.hide();
+    if (act === 'close') { stopHoverPoll(); win.hide(); }
+    else if (act === 'quit') { stopHoverPoll(); win = null; app.quit(); }
+    else if (act === 'hide') { stopHoverPoll(); win.hide(); }
     else if (act === 'show') win.show();
     else if (act === 'pin') { const on = !settings.alwaysOnTop; persist({ alwaysOnTop: on }); applyTopmost(); return on; }
   });
 
   ipcMain.handle('app:version', () => app.getVersion());
 
-  // 外链跳转（数据卡 → 网页详情）：白名单校验通过才交给系统默认浏览器
+  // 外链跳转（数据卡 → 网页详情）：白名单校验通过才交给系统默认浏览器，
+  // 且必须打开「规范化后的 URL」——校验 WHATWG 解析、打开原始串会留下解析差异面
   ipcMain.handle('ext:open', (_e, url) => {
     if (!isAllowedExtUrl(url)) return false;
-    shell.openExternal(String(url)).catch(() => { });
+    try { shell.openExternal(new URL(String(url)).href).catch(() => { }); } catch (e) { return false; }
     return true;
   });
 
@@ -743,7 +869,10 @@ function createWindow() {
     setTimeout(undoMinimize, 40);      // 系统最小化动画期间再兜一次（事件时序竞争）
     setTimeout(undoMinimize, 250);
   });
-  win.on('closed', () => setGlue(false));
+  win.on('closed', () => { stopHoverPoll(); setGlue(false); });
+  // 隐藏到托盘时停掉 260ms 光标轮询，重新显示时再起（避免后台无效唤醒）
+  win.on('hide', stopHoverPoll);
+  win.on('show', () => { if (settings.docked && settings.edgeDock !== false) ensureHoverPoll(); });
   // shot 自检：加载前清一次 HTTP 缓存，防止 file:// 的 styles.css 等被磁盘缓存住（改动看似不生效）
   if (SHOT_MODE) { try { win.webContents.session.clearCache().catch(() => { }); } catch (e) { } }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -924,16 +1053,19 @@ function createWindow() {
             const t0 = performance.now();
             const push = () => {
               const t = performance.now() - t0;
-              if (t < 650) s.push([Math.round(t), getComputedStyle(sky).clipPath]);
+              if (t < 1100) s.push([Math.round(t), getComputedStyle(sky).clipPath]);
             };
-            const tick = () => { push(); if (performance.now() - t0 < 650) requestAnimationFrame(tick); };
+            const tick = () => { push(); if (performance.now() - t0 < 1100) requestAnimationFrame(tick); };
             requestAnimationFrame(tick);
             const iv = setInterval(push, 50); // rAF 被长任务饿死时的兜底采样，保证帧密度
-            setTimeout(() => { clearInterval(iv); r(JSON.stringify(s)); }, 700);
+            setTimeout(() => { clearInterval(iv); r(JSON.stringify(s)); }, 1150);
           });
         })()`));
         const distinct = new Set(morph.map(x => x[1])).size;
-        const last = morph.length ? morph[morph.length - 1][1] : '';
+        // 收尾值单独读一次：采样窗口可能被长任务挤压；再等一拍让过渡真正落定（曾偶发误报 FAIL）
+        await new Promise(r => setTimeout(r, 350));
+        const last = String(await win.webContents.executeJavaScript(
+          `getComputedStyle(document.getElementById('sky')).clipPath`)).replace(/^"|"$/g, '');
         const settled = /856px|100% - 64px/.test(last);
         console.log('[morph-test] collapse #sky clipPath', JSON.stringify(morph.filter((_, i) => i % 3 === 0)), 'frames=' + morph.length, (distinct >= 3 && settled) ? 'PASS' : 'FAIL');
         await shoot('shot-16-night-collapse-mid.png');    // 收起过程抓帧（近尾声）
@@ -1528,14 +1660,30 @@ $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size)
 $bmp.Save('${path.join(tmp, name).replace(/\\/g, '\\\\')}',[System.Drawing.Imaging.ImageFormat]::Png)
 $g.Dispose();$bmp.Dispose()`).toString();
         await shotDesk('desk-before.png');
-        minEvents = 0; win.on('minimize', cnt);
-        psRun(CLICK_SHOWDESK);
-        await new Promise(r => setTimeout(r, 1500));
-        win.removeListener('minimize', cnt);
+        // 「显示桌面」类手势本质是 toggle：方向取决于当前桌面态。5b 的 UndoMinimizeAll 落地时机
+        // 可能让首次点击落在「还原」一侧，helper 就保持可见 → 正对照假 FAIL（实测偶发）。
+        // 统一策略：每次触发前保证 helper 可见，触发后只观察「可见 → 最小化」这一确定翻转；
+        // 若落在还原侧，桌面态已翻回常态，下一次触发必然进入显示桌面态。最多 4 次仍不中才判真失败。
+        const fireDesktopToggle = async (gesture) => {
+          let tries = 0, ok = false, evts = 0;
+          for (let i = 0; i < 4 && !ok; i++) {
+            if (helper.isMinimized()) { helper.restore(); await new Promise(r => setTimeout(r, 400)); }
+            tries++;
+            minEvents = 0; win.on('minimize', cnt);
+            psRun(gesture);
+            await new Promise(r => setTimeout(r, 1400));
+            win.removeListener('minimize', cnt);
+            evts = minEvents;
+            ok = helper.isMinimized();
+          }
+          return { ok, tries, evts };
+        };
+        const gClick = await fireDesktopToggle(CLICK_SHOWDESK);
         const bc = win.getBounds();
-        check('show-desktop-click-gesture', helper.isMinimized(), `helperMin=${helper.isMinimized()}（正对照：手势必须真触发）`);
+        check('show-desktop-click-gesture', gClick.ok,
+          `helperMin=${helper.isMinimized()} tries=${gClick.tries}（正对照：手势必须真触发）`);
         check('show-desktop-click-keep', !win.isMinimized() && bc.x > -2000 && bc.y > -2000,
-          `minimized=${win.isMinimized()} bounds=${bc.x},${bc.y} minEvents=${minEvents}`);
+          `minimized=${win.isMinimized()} bounds=${bc.x},${bc.y} minEvents=${gClick.evts}`);
         await shotDesk('desk-after-click.png');
         psRun(CLICK_SHOWDESK); // 再点一次还原其他窗口
         await new Promise(r => setTimeout(r, 600));
@@ -1547,7 +1695,7 @@ Start-Sleep -Milliseconds 60
 [K]::keybd_event(0x44,0,2,[UIntPtr]::Zero)
 Start-Sleep -Milliseconds 60
 [K]::keybd_event(0x5B,0,2,[UIntPtr]::Zero)`;
-        if (helper.isMinimized()) { psRun(WIN_D); await new Promise(r => setTimeout(r, 600)); } // 先还原 helper
+        // helper 的复位/翻转去抖统一交给 fireDesktopToggle，不再用一次裸 Win+D 猜方向
         // 5e. 像素级可见性断言（#70 真相：被壁纸盖住时窗口「健康」但用户看不见，光查 bounds/isMinimized 会假绿）。
         //     全部取样在「显示桌面」态内完成：常态下工作区窗口可能正好盖住小窗区 → 基准被污染（实测假 FAIL）；
         //     显示桌面态屏幕 = 壁纸 + 小窗，干净。DPI 感知截屏 + 小窗裁片比对（详见下方采样流程）。
@@ -1568,14 +1716,12 @@ $g.Dispose();$bmp.Dispose()`);
           return img.crop({ x: Math.round(px * SCALE), y: 0, width: Math.round(PILL_W * SCALE), height: Math.round(PILL_H * SCALE) }).toBitmap();
         };
         const mmd = (a, b) => { let s = 0; const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) s += Math.abs(a[i] - b[i]); return s / n; };
-        minEvents = 0; win.on('minimize', cnt);
-        psRun(WIN_D);
-        await new Promise(r => setTimeout(r, 1500));
-        win.removeListener('minimize', cnt);
+        const gWinD = await fireDesktopToggle(WIN_D);
         const bd = win.getBounds();
-        check('win-d-gesture', helper.isMinimized(), `helperMin=${helper.isMinimized()}（正对照：手势必须真触发）`);
+        check('win-d-gesture', gWinD.ok,
+          `helperMin=${helper.isMinimized()} tries=${gWinD.tries}（正对照：手势必须真触发）`);
         check('win-d-keep-docked', !win.isMinimized() && bd.x > -2000 && bd.y > -2000,
-          `minimized=${win.isMinimized()} bounds=${bd.x},${bd.y} minEvents=${minEvents}`);
+          `minimized=${win.isMinimized()} bounds=${bd.x},${bd.y} minEvents=${gWinD.evts}`);
         // 5e 采样：post = 显示桌面态带小窗裁片；wall = 同态下隐藏小窗后的纯壁纸裁片（基准在态内自取，免疫遮挡环境）
         shotDpi('pix-desktop.png'); const postPix = cropBuf('pix-desktop.png');
         win.hide(); await new Promise(r => setTimeout(r, 300));
@@ -1680,17 +1826,38 @@ $g.Dispose();$bmp.Dispose()`);
   win.on('closed', () => { win = null; });
 }
 
+let trayInfoText = '云上晴雨 · 桌面天气';
+/* 托盘右键菜单：刷新 / 切城市直达；tooltip 随天气刷新动态更新。
+   菜单每次重建（频率=刷新周期），保证地点列表与「窗口置顶」勾选态始终是最新的。 */
+function refreshTrayMenu(text) {
+  if (!tray) return;
+  if (text) trayInfoText = String(text).slice(0, 120) || trayInfoText;
+  try { tray.setToolTip(trayInfoText); } catch (e) { }
+  const locs = Array.isArray(settings.locations) ? settings.locations.slice(0, 12) : [];
+  const citySub = locs.length ? locs.map(l => ({
+    label: String((l && l.name) || '未知地点').slice(0, 24),
+    type: 'radio',
+    checked: l.id === settings.activeId,
+    click: () => { if (win && !win.isDestroyed()) win.webContents.send('tray:action', { type: 'switch', id: l.id }); }
+  })) : [{ label: '（暂无保存的地点）', enabled: false }];
+  try {
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: trayInfoText, enabled: false },
+      { type: 'separator' },
+      { label: '显示天气', click: () => win && win.show() },
+      { label: '立即刷新', click: () => { if (win && !win.isDestroyed()) win.webContents.send('tray:action', { type: 'refresh' }); } },
+      { label: '切换城市', submenu: citySub },
+      { label: '窗口置顶', type: 'checkbox', checked: !!settings.alwaysOnTop, click: (m) => { persist({ alwaysOnTop: m.checked }); win && applyTopmost(); refreshTrayMenu(); } },
+      { type: 'separator' },
+      { label: '退出', click: () => { win = null; app.quit(); } }
+    ]));
+  } catch (e) { }
+}
 function createTray() {
   try {
     const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
     tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
-    tray.setToolTip('云上晴雨 · 桌面天气');
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: '显示天气', click: () => win && win.show() },
-      { label: '窗口置顶', type: 'checkbox', checked: !!settings.alwaysOnTop, click: (m) => { persist({ alwaysOnTop: m.checked }); win && applyTopmost(); } },
-      { type: 'separator' },
-      { label: '退出', click: () => { win = null; app.quit(); } }
-    ]));
+    refreshTrayMenu();
     tray.on('double-click', () => win && win.show());
   } catch (e) { }
 }
@@ -1864,6 +2031,9 @@ if (!gotLock) {
   app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });
   app.whenReady().then(() => {
     loadSettings();
+    // 截图自检环境常报「减少动态效果」；自检要验证形变插值本身，强制走 on 档，
+    // 只影响 shot profile 内存态，不写盘、不影响正式实例。
+    if (SHOT_MODE) settings.motion = 'on';
     registerIpc();
     createWindow();
     createTray();

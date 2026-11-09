@@ -47,8 +47,10 @@ const Weather = (() => {
   const WIND_DIR = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
   const windDir = deg => WIND_DIR[Math.round(((deg || 0) % 360) / 45) % 8] + '风';
   const windLevel = kmh => {
-    const t = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117];
-    for (let i = 0; i < t.length; i++) if (kmh <= t[i]) return i + 1;
+    if (!Number.isFinite(Number(kmh))) return 0;
+    const v = Number(kmh);
+    const t = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117]; // 0–11 级上限（km/h）
+    for (let i = 0; i < t.length; i++) if (v <= t[i]) return i;   // 5km/h 是 1 级，不是 2 级
     return 12;
   };
 
@@ -198,7 +200,7 @@ const Weather = (() => {
       if (wet) out.push({ tone: 'blue', text: `${dayWord(bestI)}降水概率 ${best}%，备好雨具` });
       else out.push({ tone: 'green', text: `${dayWord(bestI)}可能有降水（概率 ${best}%），可备伞` });
     }
-    if (maxWind >= 39) out.push({ tone: 'orange', text: '风力较大（6级+），注意防风' });
+    if (windLevel(maxWind) >= 6) out.push({ tone: 'orange', text: '风力较大（6级+），注意防风' }); // 与 windLevel 共用一套阈值
     if (maxTemp >= 35) out.push({ tone: 'orange', text: '高温橙色提醒：注意防暑降温' });
     if (minTemp <= 0) out.push({ tone: 'orange', text: '气温将跌破冰点，注意防寒保暖' });
     if (maxUv >= 8) out.push({ tone: 'orange', text: '紫外线很强，防晒必备' });

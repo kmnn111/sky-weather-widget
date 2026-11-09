@@ -26,11 +26,15 @@ const got = async (u, ms = 12000, opts = {}, tries = 2) => {
     const t = setTimeout(() => ctrl.abort(), ms);
     try {
       const r = await fetch(u, { signal: ctrl.signal, headers: { 'User-Agent': UA, ...(opts.headers || {}) } });
-      clearTimeout(t);
+      // 超时必须覆盖「读响应体」阶段：只拿到响应头就 clearTimeout，
+      // 遇到半开连接/slowloris 会让 body 永久悬挂、Promise 永不 settle（天气转圈）。
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      if (opts.text) return await r.text();
-      if (opts.gbk) return new TextDecoder('gbk').decode(Buffer.from(await r.arrayBuffer())); // 国内老服务常见 GBK
-      return await r.json();
+      let out;
+      if (opts.text) out = await r.text();
+      else if (opts.gbk) out = new TextDecoder('gbk').decode(Buffer.from(await r.arrayBuffer()));
+      else out = await r.json();
+      clearTimeout(t);
+      return out;
     } catch (e) {
       clearTimeout(t);
       lastErr = e;

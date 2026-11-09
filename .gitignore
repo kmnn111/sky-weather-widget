@@ -19,3 +19,6 @@ zoom3.js
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 本地 UI 设计概念稿（oil-ui 工作区产物，与业务代码分离，不入库）
+.oil-ui/

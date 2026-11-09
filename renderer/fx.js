@@ -68,8 +68,14 @@ const FX = (() => {
     const moon = document.getElementById('moon');
     if (!sun || !moon) return;
     const now = Date.now();
-    const parse = s => new Date(s.replace(' ', 'T') + ':00').getTime();
+    const parse = s => {
+      if (typeof s !== 'string') return NaN;
+      const t = new Date(s.replace(' ', 'T') + ':00').getTime();
+      return Number.isFinite(t) ? t : NaN;
+    };
     const r = parse(sunrise), set = parse(sunset);
+    // 极区/缺段数据可能 sunrise===sunset 或非法时间：不写 NaNpx transform
+    if (!Number.isFinite(r) || !Number.isFinite(set) || set <= r) return;
     const dayT = (now - r) / (set - r);
     const nightLen = 24 * 3600e3 - (set - r);
     const nightT = now > set ? (now - set) / nightLen : (now - r + (24 * 3600e3 - (set - r))) / nightLen;

@@ -26,6 +26,14 @@ check('guard-reject-http', !isAllowedExtUrl('http://www.windy.com/?temp,22.3,114
 check('guard-reject-evil', !isAllowedExtUrl('https://evil.com/'));
 check('guard-reject-suffix-spoof', !isAllowedExtUrl('https://windy.com.evil.com/') && !isAllowedExtUrl('https://xwindy.com/'));
 check('guard-reject-garbage', !isAllowedExtUrl('javascript:alert(1)') && !isAllowedExtUrl('not a url'));
+// 1.0.28 加固：userinfo / 反斜杠 / 非 443 端口（校验与打开对象不一致的 TOCTOU 面）
+check('guard-reject-userinfo', !isAllowedExtUrl('https://user:pw@www.windy.com/x'));
+check('guard-reject-backslash', !isAllowedExtUrl('https://www.windy.com\\@evil.com/x'));
+check('guard-reject-port', !isAllowedExtUrl('https://www.windy.com:8443/x'));
+// 蒲福级：阈值数组是 0–11 级上限，5km/h=1级、39km/h=6级，缺值不得变 12 级
+const Weather = require('./renderer/weather.js');
+check('windlevel-beaufort', Weather.windLevel(0.5) === 0 && Weather.windLevel(5) === 1 &&
+  Weather.windLevel(39) === 6 && Weather.windLevel(120) === 12 && Weather.windLevel(undefined) === 0);
 
 /* 探针坐标（与 geo:iplocate 桩一致） */
 const LAT = 22.307, LON = 114.171;

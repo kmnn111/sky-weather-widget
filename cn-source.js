@@ -100,6 +100,10 @@ const num = v => { const x = parseFloat(String(v == null ? '' : v).replace(/[^\d
    searchCityMeta 额外返回拼音/省名/上级名——拼音是 Open-Meteo 地理编码
    中文查询召回真正城市的关键钥匙（其库以拼音为名，字面中文只命中同名小村）。 */
 const nameCache = new Map(); // name -> { meta, ts }（meta 可为 null 负缓存）
+const NAME_CACHE_MAX = 200;  // 长驻桌面应用不能让「每个打字中间态」永久堆积
+function cacheTrim() {
+  while (nameCache.size > NAME_CACHE_MAX) nameCache.delete(nameCache.keys().next().value);
+}
 
 async function searchCityMeta(name) {
   const key = String(name || '').trim();
@@ -107,6 +111,7 @@ async function searchCityMeta(name) {
   const hit = nameCache.get(key);
   const TTL = hit && hit.meta ? 24 * 3600 * 1000 : 10 * 60 * 1000; // 负缓存短（toy1 偶发限流）
   if (hit && Date.now() - hit.ts < TTL) return hit.meta;
+  nameCache.delete(key); // 过期条目直接淘汰，不留僵尸
 
   let meta = null;
   for (let i = 0; i < 2 && !meta; i++) {
@@ -133,6 +138,7 @@ async function searchCityMeta(name) {
     if (!meta && i === 0) await new Promise(r => setTimeout(r, 400));
   }
   nameCache.set(key, { meta, ts: Date.now() });
+  cacheTrim();
   return meta;
 }
 

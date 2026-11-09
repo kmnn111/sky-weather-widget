@@ -7,6 +7,13 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  // 单位显示统一走 app.js 的 SkyUnits（本文件先于 app.js 加载，故用运行时查找 + 兜底）
+  const U = () => window.SkyUnits;
+  const tC = v => (U() ? U().temp(v) : Math.round(Number(v) || 0) + '°');
+  const tN = v => (U() ? U().num(v) : Number(v) || 0);
+  const tD = v => (U() ? U().delta(v) : Math.round(Number(v) || 0) + '°');
+  const wTxt = kmh => (U() ? U().windText(kmh) : Math.round(Number(kmh) || 0) + ' km/h');
+  const wThr = ms => (U() ? U().windFromMs(ms) : (Number(ms) || 0).toFixed(1) + ' m/s');
 
   /* ===================== 指数引擎 ===================== */
   // 紫外线（WHO 分级）
@@ -170,7 +177,7 @@
     if (polEl) {
       const ah = air && air.hourly;
       let vals = [];
-      if (ah && ah.birch_pollen) {
+      if (ah && ['birch_pollen', 'grass_pollen', 'ragweed_pollen'].every(k => Array.isArray(ah[k]))) {
         const pi = hourIdx(ah.time);
         vals = [
           ['桦树花粉', Number(ah.birch_pollen[pi]) || 0],
@@ -194,10 +201,13 @@
     // — 风力罗盘 —
     const wdEl = $('modWind');
     if (wdEl) {
-      const spd = Number(w.current.wind_speed_10m) || 0;
-      const gust = Number(w.current.wind_gusts_10m) || 0;
+      const spd = Number(w.current.wind_speed_10m) || 0;   // Open-Meteo 默认 km/h
+      const gust = Number(w.current.wind_gusts_10m) || 0; // km/h
       const deg = Number(w.current.wind_direction_10m) || 0;
-      const bft = beaufort(spd);
+      // beaufort() 收 m/s；此前直接喂 km/h，风力等级被放大约 3 倍、卡面还把 km/h 数字标成 m/s
+      const bft = window.Weather ? Weather.windLevel(spd) : beaufort(spd / 3.6);
+      const wp = U() ? U().windParts(spd) : { num: (spd / 3.6).toFixed(1), unit: 'm/s' };
+      const gp = U() ? U().windParts(gust) : { num: (gust / 3.6).toFixed(1), unit: 'm/s' };
       wdEl.querySelector('.x-body').innerHTML =
         `<div class="x-wind-wrap"><div class="x-compass"><svg viewBox="0 0 76 76" aria-hidden="true">
           <circle cx="38" cy="38" r="32" class="xc-face"/>
@@ -205,8 +215,8 @@
           <g class="xc-lab"><text x="38" y="9">N</text><text x="38" y="73">S</text><text x="71" y="41">E</text><text x="5" y="41">W</text></g>
           <g class="xc-needle" style="transform:rotate(${deg}deg)"><path d="M38 14L43.5 34L38 29.6L32.5 34Z"/><rect x="37" y="29" width="2" height="26"/></g>
         </svg></div>
-        <div><div class="x-val">${spd.toFixed(1)}<span class="x-unit"> m/s</span></div>
-        <div class="x-sub">${dirName(deg)}风 · 阵风 ${gust.toFixed(1)} · ${bft} 级</div></div></div>` +
+        <div><div class="x-val">${wp.num}<span class="x-unit"> ${wp.unit}</span></div>
+        <div class="x-sub">${dirName(deg)}风 · 阵风 ${gp.num} ${gp.unit} · ${bft} 级</div></div></div>` +
         `<div class="x-adv">${bft <= 3 ? '风力平稳，适合开窗通风' : bft <= 5 ? '风力适中，注意高空坠物' : '风力较强，出行注意防风'}</div>`;
       wdEl.querySelector('.x-badge-slot').innerHTML = badge(bft + ' 级', bft >= 6 ? 'warn' : '');
       setLv(wdEl, bft >= 8 ? 5 : bft >= 6 ? 4 : bft >= 4 ? 3 : bft >= 2 ? 2 : 1);
@@ -236,10 +246,10 @@
     if (dEl) {
       const chips = ['短袖', '长袖', '薄外套', '大衣', '羽绒'];
       dEl.querySelector('.x-body').innerHTML =
-        `<div class="x-val">${dr.name}</div><div class="x-sub">${esc(dr.sub)} · 体感 ${Math.round(feels)}°</div>` +
+        `<div class="x-val">${dr.name}</div><div class="x-sub">${esc(dr.sub)} · 体感 ${tC(feels)}</div>` +
         `<div class="x-chips">${chips.map(nm => `<i class="${nm === dr.name ? 'on' : ''}">${nm}</i>`).join('')}</div>` +
         `<div class="x-adv">${esc(dr.adv)}</div>`;
-      dEl.querySelector('.x-badge-slot').innerHTML = badge(Math.round(feels) + '°', '');
+      dEl.querySelector('.x-badge-slot').innerHTML = badge(tC(feels), '');
       if (!dEl.querySelector('.x-cloth')) dEl.insertAdjacentHTML('beforeend', '<div class="x-cloth" aria-hidden="true"><i></i></div>');
     }
     // 洗车
@@ -271,7 +281,7 @@
     const cEl = $('modCold');
     if (cEl) {
       cEl.querySelector('.x-body').innerHTML =
-        `<div class="x-val">${cd.lv}</div><div class="x-sub">昼夜温差 ${cd.delta}° · ${cd.lo}°~${cd.hi}°</div>` +
+        `<div class="x-val">${cd.lv}</div><div class="x-sub">昼夜温差 ${tD(cd.delta)} · ${tC(cd.lo)}~${tC(cd.hi)}</div>` +
         segBar(cd.seg + 1, 5, 'x-cold-segs') +
         `<div class="x-adv">${cd.seg >= 2 ? '温差较大，注意增减衣物' : '感冒风险不高，正常作息'}</div>`;
       cEl.querySelector('.x-badge-slot').innerHTML = badge('风险' + cd.lv, cd.tone);
@@ -282,11 +292,18 @@
 
   /* ===================== 批3：日月与气候 ===================== */
   // 历史气候缓存（渲染层留一份，archive IPC 主进程也有 24h 缓存）
-  let archiveData = null;
+  let archiveData = null, archiveKey = '', archiveSeq = 0;
   async function ensureArchive(loc) {
-    if (archiveData || !loc) return archiveData;
-    archiveData = await sky.fetchArchive(loc.lat, loc.lon);
-    return archiveData;
+    if (!loc) return null;
+    const key = loc.lat + ',' + loc.lon;
+    // 缓存必须带地点键：否则切城后历史均值/降水统计永久用旧城市
+    if (archiveData && archiveKey === key) return archiveData;
+    const seq = ++archiveSeq;
+    const data = await sky.fetchArchive(loc.lat, loc.lon);
+    if (seq !== archiveSeq) return archiveData; // 旧地点的迟到回包作废
+    archiveKey = key;
+    archiveData = data;
+    return data;
   }
   function renderMoon() {
     const el = $('modMoon');
@@ -347,15 +364,15 @@
     }
     const diff = todayMean - avg;
     const tone = diff >= 2 ? 'warn' : diff <= -2 ? 'info' : '';
-    const label = Math.abs(diff) < 1 ? '与常年持平' : (diff > 0 ? '偏暖 ' : '偏冷 ') + Math.abs(diff).toFixed(0) + '°';
+    const label = Math.abs(diff) < 1 ? '与常年持平' : (diff > 0 ? '偏暖 ' : '偏冷 ') + tD(Math.abs(diff));
     el.querySelector('.x-badge-slot').innerHTML = badge(label, tone);
     body.innerHTML =
       `<div class="x-3col">
-        <div><small>今天</small><b>${todayMean.toFixed(0)}°</b><i class="grow" style="height:${clamp(4 + todayMean, 3, 22)}px"></i></div>
-        <div><small>常年同期</small><b>${avg.toFixed(0)}°</b><i class="grow mid" style="height:${clamp(4 + avg, 3, 22)}px"></i></div>
-        <div><small>去年今天</small><b>${lastYear != null ? lastYear.toFixed(0) + '°' : '--'}</b><i class="grow" style="height:${clamp(4 + (lastYear || 0), 3, 22)}px"></i></div>
+        <div><small>今天</small><b>${tC(todayMean)}</b><i class="grow" style="height:${clamp(4 + todayMean, 3, 22)}px"></i></div>
+        <div><small>常年同期</small><b>${tC(avg)}</b><i class="grow mid" style="height:${clamp(4 + avg, 3, 22)}px"></i></div>
+        <div><small>去年今天</small><b>${lastYear != null ? tC(lastYear) : '--'}</b><i class="grow" style="height:${clamp(4 + (lastYear || 0), 3, 22)}px"></i></div>
       </div>
-      <div class="x-adv">近 ${same.length} 年同日均温 ${avg.toFixed(1)}°</div>`;
+      <div class="x-adv">近 ${same.length} 年同日均温 ${tC(avg)}</div>`;
   }
   function renderPrecipStat() {
     const el = $('modPrecipstat');
@@ -467,7 +484,7 @@
         <i class="x-chip ${cm.cls}">${cc && cc.isDay === false ? '☾' : ''}</i>
         <span class="x-cname">${esc(l.name)}</span>
         <span class="x-ccond">${cm.txt}</span>
-        <b>${cc ? cc.t + '°' : '--'}</b></div>`;
+        <b>${cc ? tC(cc.t) : '--'}</b></div>`;
     }).join('') + `<div class="x-addrow" data-addcity>＋ 添加城市（设置面板）</div>`;
     body.querySelectorAll('[data-cid]').forEach(r => {
       r.addEventListener('click', () => {
@@ -506,12 +523,16 @@
     const y = Math.floor((1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n);
     return { x, y };
   }
+  let radarSeq = 0;
   async function ensureRadar(loc) {
     if (!loc) return;
     const locKey = loc.lat + ',' + loc.lon;
     // 帧列表 4 分钟内不重建 DOM（保住时间轴交互态）；地点变了必须重画
     if (radar.frames && radar.locKey === locKey && Date.now() - radar.ts < 4 * 60 * 1000) return;
+    if (radar.locKey !== locKey) { radar.frames = null; radar.locKey = ''; } // 旧城帧不得留底
+    const seq = ++radarSeq;
     const meta = await sky.radarFrames();
+    if (seq !== radarSeq) return; // 切城 / 并发时旧回包不得覆盖新雷达
     radar.ts = Date.now(); radar.locKey = locKey;
     if (!meta) { if (!radar.frames) renderRadar(null, loc); return; }
     radar.frames = meta;
@@ -530,7 +551,7 @@
     if (idx < 0) idx = 0;
     const slots = [];
     for (let i = idx; i < Math.min(idx + 8, m.time.length); i++) {
-      slots.push({ p: Number(m.precipitation[i]) || 0, code: Number(m.weather_code[i]) || 0 });
+      slots.push({ p: Number(m.precipitation[i]) || 0, code: Number((m.weather_code || [])[i]) || 0 });
     }
     if (!slots.length) return '';
     const isSnowCode = c => (c >= 70 && c <= 77) || c === 85 || c === 86;
@@ -547,6 +568,11 @@
   function renderRadar(meta, loc) {
     const el = $('modRadar');
     if (!el) return;
+    // 重建 DOM 前先复位拖动态：否则旧 DOM 被换掉后 .r-scrubbing / dragging 会残留
+    if (radar.dragging) {
+      radar.dragging = false;
+      document.body.classList.remove('r-scrubbing');
+    }
     const body = el.querySelector('.x-body');
     if (radar.timer) { clearInterval(radar.timer); radar.timer = null; }
     radar.syncTimer = null; radar.playBtn = null;
@@ -696,7 +722,7 @@
       const desc = alertDesc(a2);
       return `<div class="x-alertrow">
         <span class="x-switch ${a2.enabled ? 'on' : ''}" data-alert="${i}"><i></i></span>
-        <div><b>${esc(a2.label || desc)}</b><small>${esc(desc)}</small></div></div>`;
+        <div><b>${esc(alertLabel(a2))}</b><small>${esc(desc)}</small></div></div>`;
     }).join('') + `<div class="x-addrow" data-alertadd>＋ 新建提醒规则</div>`;
     body.querySelectorAll('[data-alert]').forEach(sw => {
       sw.addEventListener('click', async () => {
@@ -717,13 +743,15 @@
       renderAlerts();
     });
   }
+  // 内置模板的落盘 label 是 °C/m/s 文案；改单位后改用实时换算的 desc，避免显示与规则不符
+  const alertLabel = a2 => (a2.id && String(a2.id).indexOf('tpl_') === 0 ? alertDesc(a2) : (a2.label || alertDesc(a2)));
   function alertDesc(a2) {
     switch (a2.type) {
       case 'rain': return '未来 ' + (a2.lead || 60) + ' 分钟内有雨时通知';
-      case 'tempAbove': return '气温高于 ' + a2.threshold + '° 时通知';
-      case 'tempBelow': return '气温低于 ' + a2.threshold + '° 时通知';
+      case 'tempAbove': return '气温高于 ' + tC(a2.threshold) + ' 时通知';
+      case 'tempBelow': return '气温低于 ' + tC(a2.threshold) + ' 时通知';
       case 'uv': return '紫外线指数 ≥ ' + a2.threshold + ' 时通知';
-      case 'wind': return '风速 ≥ ' + a2.threshold + ' m/s 时通知';
+      case 'wind': return '风速 ≥ ' + wThr(a2.threshold) + ' 时通知';
       default: return '满足条件时通知';
     }
   }
@@ -748,20 +776,21 @@
         }
       } else if (a2.type === 'tempBelow') {
         const t = Number(w.current.temperature_2m);
-        if (t <= Number(a2.threshold)) { hit = true; why = `当前 ${Math.round(t)}°，注意加衣`; }
+        if (t <= Number(a2.threshold)) { hit = true; why = `当前 ${tC(t)}，注意加衣`; }
       } else if (a2.type === 'tempAbove') {
         const t = Number(w.current.temperature_2m);
-        if (t >= Number(a2.threshold)) { hit = true; why = `当前 ${Math.round(t)}°，注意防暑`; }
+        if (t >= Number(a2.threshold)) { hit = true; why = `当前 ${tC(t)}，注意防暑`; }
       } else if (a2.type === 'uv') {
         const u = Number(w.daily.uv_index_max && w.daily.uv_index_max[0]) || 0;
         if (u >= Number(a2.threshold)) { hit = true; why = `今日 UV ${Math.round(u)}，注意防晒`; }
       } else if (a2.type === 'wind') {
-        const s = Number(w.current.wind_speed_10m) || 0;
-        if (s >= Number(a2.threshold)) { hit = true; why = `风速 ${s.toFixed(1)} m/s，注意防风`; }
+        // 阈值以 m/s 存储，OM 实况是 km/h：必须换算后再比较（此前直接比，提醒过早触发）
+        const s = (Number(w.current.wind_speed_10m) || 0) / 3.6;
+        if (s >= Number(a2.threshold)) { hit = true; why = `风速 ${wThr(s)}，注意防风`; }
       }
       if (hit) {
         alertFired[a2.id] = now;
-        try { sky.notify('云上晴雨 · 天气提醒', (a2.label ? a2.label + '：' : '') + why); } catch (e) { }
+        try { sky.notify('云上晴雨 · 天气提醒', (alertLabel(a2) ? alertLabel(a2) + '：' : '') + why); } catch (e) { }
       }
     }
   }
@@ -828,15 +857,15 @@
     ctx.font = '400 26px system-ui, "Microsoft YaHei", sans-serif';
     ctx.fillStyle = isDay ? 'rgba(32,48,74,.75)' : 'rgba(242,240,255,.8)';
     ctx.fillText(`${now.getMonth() + 1}月${now.getDate()}日 · ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()]}`, 56, 562);
-    const temp = w && w.current ? Math.round(Number(w.current.temperature_2m)) : '--';
+    const temp = w && w.current ? tC(w.current.temperature_2m) : '--';
     const condTxt = w && w.current ? condMini(Number(w.current.weather_code)).txt : '';
-    ctx.font = '500 150px system-ui, sans-serif';
+    ctx.font = '500 ' + (temp.length > 3 ? 112 : 150) + 'px system-ui, sans-serif'; // °F 三位数缩字防溢出
     ctx.fillStyle = isDay ? '#20304A' : '#FFFFFF';
-    ctx.fillText(`${temp}°`, 52, 720);
+    ctx.fillText(temp, 52, 720);
     ctx.font = '500 44px system-ui, "Microsoft YaHei", sans-serif';
     ctx.fillText(condTxt, 300, 716);
     if (w && w.current) {
-      const line3 = `${dirName(Number(w.current.wind_direction_10m) || 0)}风 ${Math.round(Number(w.current.wind_speed_10m) || 0)} 级 · 湿度 ${Math.round(Number(w.current.relative_humidity_2m) || 0)}%`;
+      const line3 = `${dirName(Number(w.current.wind_direction_10m) || 0)}风 ${wTxt(w.current.wind_speed_10m)} · 湿度 ${Math.round(Number(w.current.relative_humidity_2m) || 0)}%`;
       ctx.font = '400 28px system-ui, "Microsoft YaHei", sans-serif';
       ctx.fillStyle = isDay ? 'rgba(32,48,74,.8)' : 'rgba(242,240,255,.85)';
       ctx.fillText(line3, 56, 790);
@@ -862,30 +891,53 @@
         setTimeout(() => { btn.textContent = '保存天气卡片'; }, 1600);
       });
     }
+    const copyBtn = $('btnCopyShare');
+    if (copyBtn && !copyBtn.__wired) {
+      copyBtn.__wired = true;
+      copyBtn.addEventListener('click', async () => {
+        const cv = $('shareCanvas');
+        if (!cv || !sky.copyPng) return;
+        let ok = false;
+        try { ok = await sky.copyPng(cv.toDataURL('image/png')); } catch (e) { }
+        copyBtn.textContent = ok ? '已复制 ✓' : '复制失败';
+        setTimeout(() => { copyBtn.textContent = '复制图片'; }, 1600);
+      });
+    }
   }
 
   /* ===================== 总调度 ===================== */
+  function safeX(name, fn) {
+    try { fn(); } catch (e) { console.warn('[extra] ' + name + ' 渲染失败，已隔离', e); }
+  }
   function renderAll(data, settings, loc) {
     window.__extraWeather = data && data.weather;
     window.__extraSettings = settings;
     curLoc = loc || null; // 点击跳转的坐标源（切换城市后自动跟随）
     if (!data || !data.weather) return;
-    renderReal(data.weather, data.air);
-    renderLife4(data.weather);
-    renderMoon();
-    renderHistory();
-    renderPrecipStat();
-    renderPressure();
-    renderCities();
-    renderAlerts();
-    renderShare();
-    evalAlerts(data.weather);
-    // 懒加载：仅在对应模块开启时拉重资源
+    const keyAtCall = loc ? loc.lat + ',' + loc.lon : '';
+    const stillSame = () => (curLoc ? curLoc.lat + ',' + curLoc.lon : '') === keyAtCall;
+    safeX('real', () => renderReal(data.weather, data.air));
+    safeX('life4', () => renderLife4(data.weather));
+    safeX('moon', renderMoon);
+    safeX('history', renderHistory);
+    safeX('precipstat', renderPrecipStat);
+    safeX('pressure', renderPressure);
+    safeX('cities', renderCities);
+    safeX('alerts', renderAlerts);
+    safeX('share', renderShare);
+    safeX('evalAlerts', () => evalAlerts(data.weather));
+    // 懒加载：仅在对应模块开启时拉重资源（回包须校验城市未变，且吞掉拒绝避免 unhandled）
     const m = (settings && settings.modules) || {};
     const on = k => m[k] !== false;
-    if (on('moon') || on('history') || on('precipstat')) ensureArchive(loc).then(() => { renderHistory(); renderPrecipStat(); });
-    if (on('radar')) ensureRadar(loc);
-    if (on('cities')) refreshCities();
+    if (on('moon') || on('history') || on('precipstat')) {
+      ensureArchive(loc).then(() => {
+        if (!stillSame()) return;
+        safeX('history-lazy', renderHistory);
+        safeX('precipstat-lazy', renderPrecipStat);
+      }).catch(() => {});
+    }
+    if (on('radar')) ensureRadar(loc).catch(() => {});
+    if (on('cities')) safeX('cities-lazy', () => Promise.resolve(refreshCities()).catch(() => {}));
   }
 
   /* ===================== 数据卡点击 → 网页详情 =====================

@@ -77,6 +77,23 @@ const check = (name, cond, extra) => {
   } catch (e) {
     check('got-no-retry-on-abort', calls === 1, { calls });
   }
+  /* 半开连接：响应头已到但 body 永不送达——超时必须覆盖读体阶段，不能永久悬挂 */
+  calls = 0;
+  global.fetch = (_u, o) => {
+    calls++;
+    return {
+      ok: true,
+      json: () => new Promise((_res, rej) => {
+        o.signal.addEventListener('abort', () => { const e = new Error('body aborted'); e.name = 'AbortError'; rej(e); });
+      })
+    };
+  };
+  try {
+    await got('https://example.invalid/slow-body', 150);
+    check('got-body-timeout', false, { calls });
+  } catch (e) {
+    check('got-body-timeout', calls === 1, { calls, name: e.name });
+  }
   global.fetch = realFetch;
 
   /* ⑥ rankPlaces 智能排序（确定性 fixture，不依赖网络） */
