@@ -1986,18 +1986,11 @@ body.motion-quiet .xs-line { stroke-dashoffset: 0; }
 
 /* 全静止兜底：上面逐条枚举容易漏（云团漂移、图标动画、地球光晕、AQI 指针…），
    这里按「根状态」一次性把所有 CSS 动画/过渡关掉；canvas 粒子与地球 rAF 由 JS 同步挂起。
-   系统「减少动态效果」同样生效，除非用户在设置里显式选「始终播放」(motion-override)。 */
+   body.motion-quiet 只在用户设置里显式选「关闭」时添加；系统「减少动态效果」不自动介入
+   （用户口谕：优化不等于减少动效，见 2026-11-09 日志）。 */
 body.motion-quiet, body.motion-quiet *,
 body.motion-quiet *::before, body.motion-quiet *::after {
   animation: none !important;
   transition: none !important;
   scroll-behavior: auto !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  body:not(.motion-override), body:not(.motion-override) *,
-  body:not(.motion-override) *::before, body:not(.motion-override) *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
 }

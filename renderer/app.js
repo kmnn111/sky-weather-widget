@@ -550,15 +550,15 @@
     moon: 'modMoon', history: 'modHistory', precipstat: 'modPrecipstat', pressure: 'modPressure',
     cities: 'modCities', radar: 'modRadar', alerts: 'modAlerts', share: 'modShare'
   };
-  /* 动效模式统一开关：body.motion-quiet 时 CSS 动画全部静止（含系统偏好）。
-     system=跟随系统 reduce-motion（默认，无障碍优先）/ on=始终播放 / off=一律静止。 */
+  /* 动效开关：默认始终播放，系统「减少动态效果」一律不介入。
+     v1.0.28 曾误把默认改成「跟随系统」并让系统偏好自动全静止 → 本机 reduce=true 使雷达整卡不转。
+     用户明确否决（「我让你优化，又没让你减少动态效果」）：现在只有设置里显式选「关闭」才静止。 */
   function applyMotion() {
-    const mode = ['on', 'system', 'off'].includes(state.settings && state.settings.motion)
-      ? state.settings.motion : 'system';
-    const sysReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.body.classList.toggle('motion-quiet', mode === 'off' || (mode === 'system' && !!sysReduce));
-    document.body.classList.toggle('motion-override', mode === 'on'); // 显式 on 才绕过系统偏好
-    syncAnimationSuspend(); // canvas 粒子 / 地球 rAF 也必须停，不能只靠 CSS
+    const off = !!(state.settings && state.settings.motion === 'off');
+    document.body.classList.toggle('motion-quiet', off);
+    document.body.classList.toggle('motion-off', off);
+    document.body.classList.add('motion-override'); // 系统偏好永不介入（兼容历史 CSS 规则的开关）
+    syncAnimationSuspend(); // 用户显式关闭时，canvas 粒子 / 地球 rAF 也一起停
   }
   // 收起为小窗或全静止档：统一挂起两套逐帧循环（隐藏态 FX/Globe 各自还看 document.hidden）
   function syncAnimationSuspend() {
@@ -567,12 +567,7 @@
     if (window.FX && FX.setSuspended) FX.setSuspended(idle);
     if (window.Globe && Globe.setSuspended) Globe.setSuspended(idle);
   }
-  if (window.matchMedia) {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = () => { if (((state.settings && state.settings.motion) || 'system') === 'system') applyMotion(); };
-    if (mq.addEventListener) mq.addEventListener('change', onChange);
-    else if (mq.addListener) mq.addListener(onChange);
-  }
+  // 不再监听 matchMedia 变化：系统偏好不该改变本插件的动效（用户口谕）
   function applyModules() {
     const m = (state.settings && state.settings.modules) || {};
     for (const k of MOD_KEYS) {
@@ -1257,7 +1252,7 @@
     });
     // 动效模式：system=跟随系统（默认）/ on=始终播放 / off=静止
     $('motionSelect').addEventListener('change', async e => {
-      state.settings = await sky.updateSettings({ motion: e.target.value });
+      state.settings = await sky.updateSettings({ motion: e.target.value === 'off' ? 'off' : 'on' });
       applyMotion();
     });
     // 显示模块开关：隐藏即 display:none（长模块可关，论坛反馈采纳），默认全部显示
@@ -1652,7 +1647,7 @@
     $('chkAuto').checked = !!state.settings.autoLaunch;
     $('chkEdgeDock').checked = state.settings.edgeDock !== false;
     $('chkTrayTemp').checked = state.settings.trayTemp !== false;
-    $('motionSelect').value = ['on', 'system', 'off'].includes(state.settings.motion) ? state.settings.motion : 'system';
+    $('motionSelect').value = state.settings.motion === 'off' ? 'off' : 'on';
     applyMotion();
     $('chkBrief').checked = state.settings.brief !== false;
     $('chkPush').checked = state.settings.weatherPush !== false;

@@ -37,7 +37,9 @@ let settings = {
   brief: true,          // 天气早晚报：8:00 / 20:00 系统通知播报当天概况
   weatherPush: true,    // 官方预警 / 天气突变主动推送（去重 + 仅升级触发）
   windUnit: 'level',    // 风速单位：level 蒲福级 / kmh / ms
-  unit: 'c'             // 温度单位：c 摄氏 / f 华氏
+  unit: 'c',            // 温度单位：c 摄氏 / f 华氏
+  motion: 'on'          // 动效默认始终播放（v1.0.28 曾误设 system → 本机系统减动效让雷达整卡静止）；
+                        // system=跟随系统（只关装饰）/ off=全部静止，用户显式选择优先
 };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
@@ -62,6 +64,9 @@ function loadSettings() {
     persist();
   }
   migrateLocations();
+  // v1.0.28 热修：曾误把动效默认设成「跟随系统」，本机系统减动效让雷达整卡静止。
+  // 用户明确否决自动减少动效 → 旧落盘的 system 一次性归位为始终播放（写回后不再触发）。
+  if (settings.motion === 'system') { settings.motion = 'on'; persist(); }
 }
 function persist(patch = {}) {
   Object.assign(settings, patch);
@@ -586,7 +591,7 @@ function registerIpc() {
           }
         } else if (k === 'motion') {
           // 动效模式：枚举白名单（字符串键必须显式分支，否则被 typeof boolean 分支静默丢弃）
-          if (v === 'on' || v === 'system' || v === 'off') safe.motion = v;
+          if (v === 'on' || v === 'off') safe.motion = v; // system 档已废弃：自动减少动效被用户否决
         } else if (typeof v === 'boolean' || k === 'autoLocate') {
           safe[k] = v;
         }
@@ -1223,6 +1228,42 @@ function createWindow() {
         await new Promise(r => setTimeout(r, 300));
         const rt2 = await win.webContents.executeJavaScript(`document.querySelector('#modRadar [data-rplay]').textContent`);
         console.log('[radar-test] play-restore', rt2, rt2 === '❚❚' ? 'PASS' : 'FAIL');
+        // 动效回归（v1.0.28 热修，用户口谕「我让你优化，又没让你减少动态效果」）：
+        // 本机 matchMedia reduce=true 也不能自动加 motion-quiet；只有用户显式「关闭」才静止。
+        const sysReduce = await win.webContents.executeJavaScript(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
+        const autoQuiet = await win.webContents.executeJavaScript(`document.body.classList.contains('motion-quiet')`);
+        console.log('[motion-test] no-auto-quiet', JSON.stringify({ sysReduce, autoQuiet }), !autoQuiet ? 'PASS' : 'FAIL');
+        const frameState = `(() => {
+          const el = document.getElementById('modRadar');
+          const k = el.querySelector('.x-r-knob');
+          return JSON.stringify({ lab: (el.querySelector('.x-r-now') || {}).textContent || '',
+            kx: k ? k.style.transform : '' });
+        })()`;
+        const defaultSweep = await win.webContents.executeJavaScript(
+          `getComputedStyle(document.querySelector('#modRadar .x-radar-sweep')).animationName`);
+        console.log('[radar-test] default-sweep', defaultSweep, defaultSweep === 'x-spin' ? 'PASS' : 'FAIL');
+        // 帧循环必须真的推进：旧自检只查形状/按钮文字，才让「整卡静止」溜过发版
+        const fA = await win.webContents.executeJavaScript(frameState);
+        await new Promise(r => setTimeout(r, 1500));
+        const fB = await win.webContents.executeJavaScript(frameState);
+        console.log('[radar-test] frame-advance', JSON.stringify({ a: fA, b: fB }), fA !== fB ? 'PASS' : 'FAIL');
+        // 用户显式「关闭动效」：扫掠静止 + 帧轮播停（这是唯一允许静止的入口）
+        await win.webContents.executeJavaScript(`document.body.classList.add('motion-quiet'); document.body.classList.add('motion-off');`);
+        await new Promise(r => setTimeout(r, 150));
+        const sweepOff = await win.webContents.executeJavaScript(
+          `getComputedStyle(document.querySelector('#modRadar .x-radar-sweep')).animationName`);
+        console.log('[radar-test] user-off-sweep', sweepOff, sweepOff === 'none' ? 'PASS' : 'FAIL');
+        const oA = await win.webContents.executeJavaScript(frameState);
+        await new Promise(r => setTimeout(r, 1600));
+        const oB = await win.webContents.executeJavaScript(frameState);
+        console.log('[radar-test] user-off-frame', JSON.stringify({ a: oA, b: oB }), oA === oB ? 'PASS' : 'FAIL');
+        // 状态复位后帧循环要能自己恢复；后续模块开关/形变断言不能带临时类跑
+        await win.webContents.executeJavaScript(`document.body.classList.remove('motion-off'); document.body.classList.remove('motion-quiet');`);
+        await new Promise(r => setTimeout(r, 250));
+        const zA = await win.webContents.executeJavaScript(frameState);
+        await new Promise(r => setTimeout(r, 1500));
+        const zB = await win.webContents.executeJavaScript(frameState);
+        console.log('[radar-test] resume-frame', JSON.stringify({ a: zA, b: zB }), zA !== zB ? 'PASS' : 'FAIL');
         // 模块开关：真实走设置面板勾选链路（change → updateSettings → applyModules），测完还原
         await win.webContents.executeJavaScript(`document.getElementById("btnSettings").click()`);
         await new Promise(r => setTimeout(r, 500));

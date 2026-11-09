@@ -515,6 +515,8 @@
   window.addEventListener('pointerup', endScrub);
   window.addEventListener('pointercancel', endScrub);
   window.addEventListener('blur', endScrub);
+  // 隐藏到托盘时撤掉帧定时器、回来按当前播放态重建（模块级只挂一次，无重复监听）
+  document.addEventListener('visibilitychange', () => { if (radar.syncTimer) radar.syncTimer(); });
 
   function tileXY(lat, lon, z) {
     const n = Math.pow(2, z);
@@ -647,15 +649,16 @@
       if (nowLab) nowLab.textContent = fmtT(all[radar.idx].time) + (radar.idx >= nPast ? '（外推）' : '');
     };
     // 播放循环（800ms × .6s opacity 交叉淡化：雨云移动肉眼可辨）
-    const quiet = () => document.body.classList.contains('motion-quiet');
+    // 只有用户显式「关闭动效」才掐掉雷达；系统「减少动态效果」不介入（用户口谕）。
+    const quiet = () => document.body.classList.contains('motion-off');
     const syncTimer = () => {
       if (radar.timer) { clearInterval(radar.timer); radar.timer = null; }
-      const active = radar.playing && !radar.dragging && layerEls.length > 1 && (!quiet() || radar.userPlay);
+      const active = radar.playing && !radar.dragging && layerEls.length > 1 && !quiet() && !document.hidden;
       if (playBtn) playBtn.textContent = active ? '❚❚' : '▶';
       if (!active) return;
       radar.timer = setInterval(() => {
-        // tick 级守卫：运行中切到静止档立即停帧（用户显式点播则放行）
-        if (quiet() && !radar.userPlay) return;
+        // tick 级双保险：运行中切到「关闭」或窗口隐藏到托盘，立即停帧不空转
+        if (quiet() || document.hidden) return;
         setFrame(radar.idx + 1);
       }, 800);
     };
