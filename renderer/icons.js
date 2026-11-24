@@ -1,144 +1,171 @@
 'use strict';
 /**
- * 手绘风 SVG 天气图标库（吉卜力水彩气质：圆润、暖色、带腮红的小表情）
+ * 云上晴雨 · 天光（Living Sky）矢量天气图标库
+ * 光感立体渐变 + 柔和投影 + 合成层微动效（只动 transform/opacity）
  * 用法：Icons.svg('sun', 64)  ->  返回 <svg> 字符串
  */
 const Icons = (() => {
-  const face = `
-    <circle cx="27.2" cy="31" r="1.7" fill="#8a5a1f"/>
-    <circle cx="36.8" cy="31" r="1.7" fill="#8a5a1f"/>
-    <path d="M29 36.2q3 2.4 6 0" stroke="#8a5a1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-    <ellipse cx="23.2" cy="35" rx="2.6" ry="1.8" fill="#ffab96" opacity=".75"/>
-    <ellipse cx="40.8" cy="35" rx="2.6" ry="1.8" fill="#ffab96" opacity=".75"/>`;
+  let uid = 0;
+  // 统一柔和云体路径（64×64 坐标系，圆润有体积感）
+  const CLOUD_PATH = 'M17 47 C10.2 47 6 42.2 6 36.4 C6 30.8 10.1 26.4 15.8 25.9 C17.7 18.6 24.3 13.2 32.1 13.2 C40.6 13.2 47.4 19.3 48.6 27.3 C54.0 28.0 57.6 32.3 57.6 37.4 C57.6 42.8 53.2 47 47.6 47 Z';
 
-  const sunCore = `
-    <circle cx="32" cy="32" r="13.5" fill="url(#gSun)" stroke="#efa53c" stroke-width="2.4"/>
-    ${face}`;
-
-  const rays = `
-    <g class="ico-rays" stroke="#f6b94c" stroke-width="3.6" stroke-linecap="round">
-      <line x1="32" y1="5" x2="32" y2="12"/><line x1="32" y1="52" x2="32" y2="59"/>
-      <line x1="5" y1="32" x2="12" y2="32"/><line x1="52" y1="32" x2="59" y2="32"/>
-      <line x1="13" y1="13" x2="18" y2="18"/><line x1="46" y1="46" x2="51" y2="51"/>
-      <line x1="13" y1="51" x2="18" y2="46"/><line x1="46" y1="18" x2="51" y2="13"/>
-    </g>`;
-
-  const defs = `
-    <defs>
-      <linearGradient id="gSun" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#ffc95c"/>
-      </linearGradient>
-      <radialGradient id="gGlow">
-        <stop offset="0" stop-color="#ffd97a" stop-opacity=".9"/>
-        <stop offset="0.5" stop-color="#ffcf6a" stop-opacity=".38"/>
-        <stop offset="1" stop-color="#ffcf6a" stop-opacity="0"/>
+  function buildDefs(id) {
+    return `<defs>
+      <radialGradient id="${id}s" cx="38%" cy="34%" r="68%">
+        <stop offset="0%" stop-color="#fff9df"/>
+        <stop offset="46%" stop-color="#ffd86e"/>
+        <stop offset="100%" stop-color="#ff9f38"/>
       </radialGradient>
-      <linearGradient id="gCloud" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e7f1f8"/>
+      <radialGradient id="${id}g" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#ffd97a" stop-opacity=".85"/>
+        <stop offset="55%" stop-color="#ffc85c" stop-opacity=".28"/>
+        <stop offset="100%" stop-color="#ffc85c" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ffffff"/>
+        <stop offset="100%" stop-color="#cfe0f2"/>
       </linearGradient>
-      <linearGradient id="gCloudDark" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#e8eef5"/><stop offset="1" stop-color="#c3d2e2"/>
+      <linearGradient id="${id}cd" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#d8e1ee"/>
+        <stop offset="100%" stop-color="#99abc4"/>
       </linearGradient>
-      <linearGradient id="gMoon" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#fff3c9"/><stop offset="1" stop-color="#ffd97a"/>
+      <radialGradient id="${id}m" cx="34%" cy="32%" r="72%">
+        <stop offset="0%" stop-color="#fffceb"/>
+        <stop offset="58%" stop-color="#f7df96"/>
+        <stop offset="100%" stop-color="#e5be60"/>
+      </radialGradient>
+      <radialGradient id="${id}mg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#ffe9a8" stop-opacity=".42"/>
+        <stop offset="100%" stop-color="#ffe9a8" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="${id}b" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#fff099"/>
+        <stop offset="100%" stop-color="#ffad2e"/>
       </linearGradient>
     </defs>`;
+  }
 
-  // 阳光光晕（呼吸扩散 = 阳光照射感），垫在光芒与太阳体之下
-  const sunGlow = `<circle class="ico-glow" cx="32" cy="32" r="21" fill="url(#gGlow)"/>`;
+  const sunBody = (id, cx, cy, r) => {
+    const rayAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+    const rays = rayAngles.map(a => {
+      const ra = a * Math.PI / 180;
+      const x1 = (cx + Math.cos(ra) * r * 1.32).toFixed(1);
+      const y1 = (cy + Math.sin(ra) * r * 1.32).toFixed(1);
+      const x2 = (cx + Math.cos(ra) * r * 1.66).toFixed(1);
+      const y2 = (cy + Math.sin(ra) * r * 1.66).toFixed(1);
+      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    }).join('');
+    return `
+      <circle class="ico-glow" cx="${cx}" cy="${cy}" r="${(r * 2.15).toFixed(1)}" fill="url(#${id}g)"/>
+      <g class="ico-rays" stroke="#ffbe4a" stroke-width="${(r * 0.24).toFixed(1)}" stroke-linecap="round" opacity=".92">${rays}</g>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}s)"/>`;
+  };
 
-  // 云：内部 ico-cloud 做缓慢漂浮（多云不再静止）；delay 用于多朵云错相
-  const cloud = (fill = 'url(#gCloud)', stroke = '#a9c6da', y = 0, delay = 0) => `
-    <g transform="translate(0 ${y})">
+  const moonBody = (id, cx, cy, r) => `
+    <mask id="${id}mk">
+      <rect width="64" height="64" fill="#fff"/>
+      <circle cx="${(cx + r * 0.56).toFixed(1)}" cy="${(cy - r * 0.36).toFixed(1)}" r="${(r * 0.88).toFixed(1)}" fill="#000"/>
+    </mask>
+    <circle class="ico-glow" cx="${cx}" cy="${cy}" r="${(r * 1.85).toFixed(1)}" fill="url(#${id}mg)"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}m)" mask="url(#${id}mk)"/>`;
+
+  const cloudBody = (id, dark = false, tx = 0, ty = 0, scale = 1, delay = 0) => `
+    <g transform="translate(${tx} ${ty}) scale(${scale})">
       <g class="ico-cloud" style="animation-delay:${delay}s">
-        <path d="M17 46 A10 10 0 0 1 20 27 A13.5 13.5 0 0 1 43.5 23 A9.5 9.5 0 0 1 52 46 Z"
-          fill="${fill}" stroke="${stroke}" stroke-width="2.3" stroke-linejoin="round"/>
+        <path d="${CLOUD_PATH}" fill="rgba(32,62,110,0.12)" transform="translate(0 2.2)"/>
+        <path d="${CLOUD_PATH}" fill="url(#${id}${dark ? 'cd' : 'c'})" stroke="rgba(255,255,255,0.88)" stroke-width="1.2" stroke-linejoin="round"/>
       </g>
     </g>`;
 
-  // 雨滴：逐滴错峰下落 = 连续降雨感
-  const drops = (n = 4, color = '#6fa8dd') => {
+  const drops = (n = 4, color = '#4a98ea') => {
     let s = '<g class="ico-rain">';
-    const xs = n === 3 ? [24, 32, 40] : n === 5 ? [20, 26, 32, 38, 44] : [22, 30, 38, 46];
+    const xs = n === 3 ? [23, 32, 41] : n === 5 ? [19, 25.5, 32, 38.5, 45] : [21, 28.5, 36, 43.5];
     xs.forEach((x, i) => {
       const dy = i % 2 ? 3 : 0;
-      s += `<path class="drop" style="animation-delay:${(i * 0.19).toFixed(2)}s" d="M${x} ${51 + dy} q-2.2 4 0 6.4 q2.2-2.4 0-6.4z" fill="${color}" opacity=".9"/>`;
+      s += `<line class="drop" style="animation-delay:${(i * 0.18).toFixed(2)}s" x1="${x}" y1="${49 + dy}" x2="${(x - 2.4).toFixed(1)}" y2="${56.5 + dy}" stroke="${color}" stroke-width="2.9" stroke-linecap="round"/>`;
     });
     return s + '</g>';
   };
 
-  // 雪花：飘落 + 左右摇摆（外层定位，内层 ico-snow 动）
-  const flakes = (color = '#9cc7e8') => {
-    let s = '<g class="ico-snow" stroke="' + color + '" stroke-width="2" stroke-linecap="round">';
-    [[22, 53], [32, 56], [42, 53], [27, 60], [37, 60]].forEach(([x, y], i) => {
+  const flakes = (color = '#93c5f2') => {
+    let s = `<g class="ico-snow" stroke="${color}" stroke-width="2" stroke-linecap="round">`;
+    [[21, 51], [32, 54], [43, 51], [26.5, 58.5], [37.5, 58.5]].forEach(([x, y], i) => {
       s += `<g transform="translate(${x} ${y})"><g class="flake" style="animation-delay:${(i * 0.42).toFixed(2)}s">` +
-        `<line x1="-3" y1="0" x2="3" y2="0"/><line x1="0" y1="-3" x2="0" y2="3"/><line x1="-2" y1="-2" x2="2" y2="2"/><line x1="-2" y1="2" x2="2" y2="-2"/></g></g>`;
+        `<line x1="-3.2" y1="0" x2="3.2" y2="0"/><line x1="0" y1="-3.2" x2="0" y2="3.2"/><line x1="-2.2" y1="-2.2" x2="2.2" y2="2.2"/><line x1="-2.2" y1="2.2" x2="2.2" y2="-2.2"/></g></g>`;
     });
     return s + '</g>';
   };
 
   const stars = `
-    <g class="ico-twinkle" fill="#fff2c4">
-      <path d="M12 14 l1.4 3.4 3.4 1.4 -3.4 1.4 -1.4 3.4 -1.4-3.4 -3.4-1.4 3.4-1.4z"/>
-      <path d="M52 12 l1.1 2.7 2.7 1.1 -2.7 1.1 -1.1 2.7 -1.1-2.7 -2.7-1.1 2.7-1.1z"/>
-      <circle cx="47" cy="24" r="1.5"/><circle cx="16" cy="27" r="1.2"/>
+    <g class="ico-twinkle" fill="#fff4cc">
+      <path d="M13 14 l1.4 3.4 3.4 1.4 -3.4 1.4 -1.4 3.4 -1.4-3.4 -3.4-1.4 3.4-1.4z"/>
+      <path d="M51 13 l1.1 2.6 2.6 1.1 -2.6 1.1 -1.1 2.6 -1.1-2.6 -2.6-1.1 2.6-1.1z"/>
+      <circle cx="47" cy="25" r="1.4"/><circle cx="17" cy="28" r="1.1"/>
     </g>`;
 
-  const moonShape = `
-    <path d="M40 12 A17 17 0 1 0 52 38 A13.5 13.5 0 0 1 40 12 Z"
-      fill="url(#gMoon)" stroke="#e8c56a" stroke-width="2.2"/>
-    <circle cx="30" cy="26" r="2.4" fill="#f3d98d" opacity=".9"/>
-    <circle cx="36" cy="36" r="1.8" fill="#f3d98d" opacity=".9"/>`;
+  const bolt = (id) => `
+    <path d="M35 39 l-9.5 13.5 h6.8 l-3 10 11.5-15 h-6.8 l2.8-8.5z"
+      fill="url(#${id}b)" stroke="#9a5c0a" stroke-opacity=".3" stroke-width="1" stroke-linejoin="round" class="ico-bolt"/>`;
 
-  const bolt = `
-    <path d="M35 42 l-9 13 h6.5 l-2.5 9 10.5-14 h-6.5 z"
-      fill="#ffd34e" stroke="#e8a93b" stroke-width="2" stroke-linejoin="round" class="ico-bolt"/>`;
+  function shapeOf(name, id) {
+    switch (name) {
+      case 'sun':
+        return sunBody(id, 32, 32, 13);
+      case 'sun-cloud':
+        return sunBody(id, 22, 22, 9.5) + cloudBody(id, false, 7, 10, 0.84, -1.6);
+      case 'cloud':
+        return cloudBody(id, false, 0, 2, 1, 0);
+      case 'overcast':
+        return cloudBody(id, true, -3, -3, 0.9, 0) + cloudBody(id, false, 5, 8, 0.9, -2.4);
+      case 'fog':
+        return cloudBody(id, false, 0, -4, 0.96, 0) + `
+          <g stroke="#a8c2da" stroke-width="3" stroke-linecap="round" class="ico-mist">
+            <path style="animation-delay:0s" d="M14 51 q9-3 18 0 t18 0" fill="none"/>
+            <path style="animation-delay:-.7s" d="M19 58 q8-3 16 0 t12 0" fill="none" opacity=".7"/>
+          </g>`;
+      case 'drizzle':
+        return cloudBody(id, false, 0, -4, 0.98, 0) + drops(3, '#6eb0ee');
+      case 'rain':
+        return cloudBody(id, false, 0, -4, 0.98, 0) + drops(4, '#4a98ea');
+      case 'heavy-rain':
+        return cloudBody(id, true, 0, -5, 0.98, 0) + drops(5, '#3b82d6');
+      case 'snow':
+        return cloudBody(id, false, 0, -5, 0.98, 0) + flakes('#93c5f2');
+      case 'heavy-snow':
+        return cloudBody(id, true, 0, -5, 0.98, 0) + flakes('#7fb6e8');
+      case 'sleet':
+        return cloudBody(id, false, 0, -4, 0.98, 0) + drops(3, '#4a98ea') + flakes('#93c5f2');
+      case 'thunder':
+        return cloudBody(id, true, 0, -5, 0.98, 0) + bolt(id);
+      case 'wind':
+        return cloudBody(id, false, 0, -4, 0.96, 0) + `
+          <g stroke="#8db2d4" stroke-width="2.8" stroke-linecap="round" fill="none" class="ico-wind">
+            <path style="animation-delay:0s" d="M12 51 h25 a5 5 0 1 0 -5-5"/>
+            <path style="animation-delay:-.55s" d="M18 58 h17 a4 4 0 1 1 -4 4" opacity=".82"/>
+          </g>`;
+      case 'moon':
+        return stars + moonBody(id, 30, 33, 15.5);
+      case 'moon-cloud':
+        return stars + moonBody(id, 21, 21, 10.5) + cloudBody(id, false, 7, 10, 0.84, -1.8);
+      default:
+        return cloudBody(id, false, 0, 2, 1, 0);
+    }
+  }
 
-  const sunSmall = (x, y, r) => `
-    <g transform="translate(${x} ${y})">
-      <circle class="ico-glow" r="${r + 8}" fill="url(#gGlow)"/>
-      <circle r="${r}" fill="url(#gSun)" stroke="#efa53c" stroke-width="2"/>
-      <g class="ico-rays" stroke="#f6b94c" stroke-width="2.4" stroke-linecap="round">
-        <line x1="0" y1="${-r - 5}" x2="0" y2="${-r - 1.5}"/><line x1="0" y1="${r + 1.5}" x2="0" y2="${r + 5}"/>
-        <line x1="${-r - 5}" y1="0" x2="${-r - 1.5}" y2="0"/><line x1="${r + 1.5}" y1="0" x2="${r + 5}" y2="0"/>
-      </g>
-    </g>`;
-
-  const moonSmall = (x, y, r) => `
-    <path transform="translate(${x} ${y})" d="M${r * 0.6} ${-r} A${r} ${r} 0 1 0 ${r * 1.3} ${r * 0.7} A${r * 0.8} ${r * 0.8} 0 0 1 ${r * 0.6} ${-r} Z"
-      fill="url(#gMoon)" stroke="#e8c56a" stroke-width="1.8"/>`;
-
+  // 保留 shapes 键表兼容旧代码检测
   const shapes = {
-    sun: sunGlow + rays + sunCore,
-    'sun-cloud': sunSmall(20, 20, 9) + cloud('url(#gCloud)', '#a9c6da', 4, -1.6),
-    cloud: cloud(),
-    overcast: cloud('url(#gCloudDark)', '#93aac2', -2, 0) + cloud('url(#gCloud)', '#a9c6da', 6, -2.4),
-    fog: cloud('url(#gCloud)', '#a9c6da', -4) + `
-      <g stroke="#b7cfe2" stroke-width="3" stroke-linecap="round" class="ico-mist">
-        <path style="animation-delay:0s" d="M16 52 q8-3.5 16 0 t16 0" fill="none"/>
-        <path style="animation-delay:-.7s" d="M20 59 q8-3.5 16 0 t12 0" fill="none" opacity=".7"/>
-      </g>`,
-    drizzle: cloud('url(#gCloud)', '#a9c6da', -3) + drops(3, '#8fc0e8'),
-    rain: cloud('url(#gCloud)', '#a9c6da', -3) + drops(4, '#6fa8dd'),
-    'heavy-rain': cloud('url(#gCloudDark)', '#93aac2', -4) + drops(5, '#5b8fd4'),
-    snow: cloud('url(#gCloud)', '#a9c6da', -4) + flakes(),
-    'heavy-snow': cloud('url(#gCloud)', '#a9c6da', -4) + flakes('#7fb2dc'),
-    sleet: cloud('url(#gCloud)', '#a9c6da', -3) + drops(3, '#6fa8dd') + flakes('#9cc7e8'),
-    thunder: cloud('url(#gCloudDark)', '#8aa2bc', -4) + bolt,
-    wind: cloud('url(#gCloud)', '#a9c6da', -4) + `
-      <g stroke="#a9c6da" stroke-width="3" stroke-linecap="round" fill="none" class="ico-wind">
-        <path style="animation-delay:0s" d="M12 52 h24 a5 5 0 1 0 -5-5"/>
-        <path style="animation-delay:-.55s" d="M18 59 h16 a4 4 0 1 1 -4 4" opacity=".8"/>
-      </g>`,
-    moon: moonShape + stars,
-    'moon-cloud': moonSmall(19, 17, 10) + stars + cloud('url(#gCloud)', '#a9c6da', 5, -1.8)
+    sun: 1, 'sun-cloud': 1, cloud: 1, overcast: 1, fog: 1,
+    drizzle: 1, rain: 1, 'heavy-rain': 1, snow: 1, 'heavy-snow': 1,
+    sleet: 1, thunder: 1, wind: 1, moon: 1, 'moon-cloud': 1
   };
 
   function svg(name, size = 48, extraClass = '') {
-    const body = shapes[name] || shapes.cloud;
-    return `<svg class="ico ico-${name} ${extraClass}" width="${size}" height="${size}" viewBox="0 0 64 64" fill="none">${defs}${body}</svg>`;
+    const id = 'ls' + (++uid);
+    const key = shapes[name] ? name : 'cloud';
+    return `<svg class="ico ico-${key} ${extraClass}" width="${size}" height="${size}" viewBox="0 0 64 64" fill="none" style="overflow:visible">${buildDefs(id)}${shapeOf(key, id)}</svg>`;
   }
-  /* ---------- 线性 UI 图标（苹果风描边） ---------- */
+
+  /* ---------- 线性 UI 图标（1.8px 圆角描边） ---------- */
   const uiShapes = {
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     sliders: '<path d="M4 8h9M18.5 8H20M4 16h2.5M12 16h8"/><circle cx="15.5" cy="8" r="2.2"/><circle cx="9" cy="16" r="2.2"/>',

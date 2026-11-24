@@ -6,6 +6,7 @@
     content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com https://*.is.autonavi.com; script-src 'self'" />
   <title>云上晴雨</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="living-sky.css" />
 </head>
 <body>
   <!-- ======== 圆角玻璃轮廓：所有内容裁进圆角矩形，外轮廓只有圆弧 ======== -->
@@ -18,6 +19,14 @@
     <div id="sun"></div>
     <div id="moon"></div>
     <div class="clouds"><i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i></div>
+    <svg class="sky-birds" width="68" height="22" viewBox="0 0 68 22" fill="none" aria-hidden="true">
+      <path d="M2 9q4.5-4.5 9 0q4.5-4.5 9 0"/><path d="M33 15q3.5-3.5 7 0q3.5-3.5 7 0"/><path d="M51 5q2.8-2.8 5.6 0q2.8-2.8 5.6 0"/>
+    </svg>
+    <svg class="sky-hills" viewBox="0 0 480 120" preserveAspectRatio="none" aria-hidden="true">
+      <path class="hill-far" d="M0 68C72 38 152 50 222 64s148 4 258-28V120H0z"/>
+      <path class="hill-mid" d="M0 92c92-26 172-12 252 0s148 4 228-14V120H0z"/>
+      <path class="hill-near" d="M0 112c120-14 260-14 480-4V120H0z"/>
+    </svg>
   </div>
   <canvas id="fx"></canvas>
 
@@ -30,6 +39,7 @@
       <div class="pill-sub" id="pillSub"></div>
     </div>
     <div class="pill-temp"><span id="pillTemp">--</span><em>°</em></div>
+    <div class="pill-ribbon" id="pillRibbon"></div>
   </div>
 
   <!-- ======== 组件内容 ======== -->

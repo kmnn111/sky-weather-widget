@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>云上晴雨 · 天光 Living Sky 设计稿</title>
+<style>
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Light.woff2) format('woff2');font-weight:300}
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Regular.woff2) format('woff2');font-weight:400}
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Medium.woff2) format('woff2');font-weight:500}
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Bold.woff2) format('woff2');font-weight:700}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#F3F1EC;font-family:HOS,"Microsoft YaHei",sans-serif;color:#1E2836;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+body.only-big #sheetPill,body.only-pill #sheetBig{display:none}
+
+/* ================= SHEET ================= */
+.sheet{width:1136px;padding:44px 56px 52px;position:relative}
+.sheet-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:22px;border-bottom:1px solid #DDD8CE;margin-bottom:26px}
+.sheet-head h1{font-size:30px;font-weight:500;letter-spacing:2px}
+.sheet-head h1 b{font-weight:300;color:#9A8F7E;margin:0 10px}
+.sheet-head .en{font-size:11px;letter-spacing:3.2px;color:#A49A8A;margin-top:8px}
+.sheet-head .note{text-align:right;font-size:13px;line-height:1.75;color:#7D7466}
+.sheet-head .note i{font-style:normal;color:#E0892E}
+.lbl{display:flex;justify-content:space-between;font-size:13px;color:#6F675B;margin-bottom:12px;letter-spacing:1px}
+.lbl span:last-child{font-size:11px;color:#A79E90;letter-spacing:2px}
+.cols{display:flex;gap:64px}
+
+/* ================= WINDOW ================= */
+.win{width:480px;height:920px;border-radius:30px;overflow:hidden;position:relative;
+  box-shadow:0 30px 60px -20px rgba(40,60,90,.35),0 0 0 1px rgba(255,255,255,.6) inset}
+.win.day{--ink:#1D2938;--ink2:rgba(29,41,56,.62);--ink3:rgba(29,41,56,.42);
+  --card:rgba(255,255,255,.66);--cardline:rgba(255,255,255,.85);--track:rgba(30,50,80,.08);
+  --accent:#F0A23A;--rain:#3B8CE0;--glass:rgba(255,255,255,.42);
+  background:linear-gradient(180deg,#DDEBF5 0,#EEF2F2 55%,#F5F1EA 100%)}
+.win.night{--ink:#EEF1FC;--ink2:rgba(226,232,255,.66);--ink3:rgba(226,232,255,.42);
+  --card:rgba(36,42,86,.55);--cardline:rgba(255,255,255,.08);--track:rgba(255,255,255,.08);
+  --accent:#F4D28A;--rain:#7DB7FF;--glass:rgba(255,255,255,.08);
+  background:linear-gradient(180deg,#252A5C 0,#1B1F45 45%,#14172F 100%);
+  box-shadow:0 30px 60px -20px rgba(10,14,40,.55),0 0 0 1px rgba(255,255,255,.07) inset}
+.win::after{content:"";position:absolute;left:0;right:0;bottom:0;height:70px;pointer-events:none;z-index:9}
+.win.day::after{background:linear-gradient(180deg,rgba(245,241,234,0),#F5F1EA 85%)}
+.win.night::after{background:linear-gradient(180deg,rgba(20,23,47,0),#14172F 85%)}
+
+/* ---- hero sky ---- */
+.hero{position:relative;height:352px;color:var(--ink)}
+.sky{position:absolute;inset:0;overflow:hidden}
+.day .sky{background:
+  radial-gradient(240px 200px at 80% 20%,rgba(255,226,160,.95),rgba(255,214,140,.35) 45%,rgba(255,214,140,0) 70%),
+  linear-gradient(180deg,#7DB8EC 0%,#A9D2F3 42%,#D9EAF5 78%,#DDEBF5 100%)}
+.night .sky{background:
+  radial-gradient(200px 170px at 80% 19%,rgba(255,232,180,.38),rgba(255,232,180,.08) 50%,rgba(255,232,180,0) 72%),
+  linear-gradient(180deg,#0E1230 0%,#1C2152 45%,#2A2E66 85%,#252A5C 100%)}
+.sun{position:absolute;left:338px;top:62px;width:64px;height:64px;border-radius:50%;
+  background:radial-gradient(circle at 40% 38%,#FFF7DC 0,#FFE08A 40%,#FFB54A 100%);
+  box-shadow:0 0 40px 14px rgba(255,205,110,.55),0 0 90px 40px rgba(255,220,150,.35);animation:breathe 6s ease-in-out infinite}
+.moon{position:absolute;left:346px;top:66px;width:52px;height:52px;border-radius:50%;
+  background:radial-gradient(circle at 36% 34%,#FFFBEA 0,#F7E3A8 55%,#E7C878 100%);
+  box-shadow:0 0 30px 8px rgba(255,228,160,.28),0 0 80px 30px rgba(255,228,160,.12)}
+.moon::after{content:"";position:absolute;width:12px;height:12px;border-radius:50%;left:28px;top:14px;background:rgba(200,170,100,.25);box-shadow:-14px 16px 0 -3px rgba(200,170,100,.2)}
+@keyframes breathe{50%{box-shadow:0 0 50px 18px rgba(255,205,110,.62),0 0 110px 48px rgba(255,220,150,.38)}}
+.cloud{position:absolute;animation:drift linear infinite alternate}
+@keyframes drift{to{transform:translateX(28px)}}
+.stars i{position:absolute;width:2px;height:2px;border-radius:50%;background:#fff;animation:twinkle 3.6s ease-in-out infinite}
+@keyframes twinkle{50%{opacity:.25}}
+.rain i{position:absolute;width:1.4px;height:16px;border-radius:2px;background:linear-gradient(180deg,rgba(170,205,255,0),rgba(170,205,255,.75));transform:rotate(12deg);animation:fall .9s linear infinite}
+@keyframes fall{from{translate:0 -40px}to{translate:-22px 360px}}
+.birds{position:absolute;left:250px;top:92px;opacity:.55}
+.hills{position:absolute;left:0;right:0;bottom:0}
+
+.topbar{position:absolute;left:20px;right:20px;top:18px;display:flex;justify-content:space-between;align-items:center;z-index:3}
+.loc{display:flex;align-items:center;gap:6px;height:34px;padding:0 14px 0 11px;border-radius:17px;background:var(--glass);
+  backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.35);font-size:14px;font-weight:500}
+.night .loc,.night .ibtn{border-color:rgba(255,255,255,.1)}
+.loc small{font-size:12px;font-weight:400;color:var(--ink2)}
+.ibtns{display:flex;gap:8px}
+.ibtn{width:34px;height:34px;border-radius:50%;background:var(--glass);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.35);display:grid;place-items:center}
+.ibtn svg{width:16px;height:16px;stroke:var(--ink);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+
+.temp{position:absolute;left:22px;top:64px;z-index:3;display:flex;align-items:flex-start}
+.temp b{font-weight:300;font-size:128px;line-height:1;letter-spacing:-6px}
+.temp sup{font-weight:300;font-size:44px;margin:12px 0 0 8px;opacity:.85}
+.cond{position:absolute;left:28px;top:200px;z-index:3}
+.cond h2{font-size:22px;font-weight:500;letter-spacing:1px}
+.cond p{font-size:13px;color:var(--ink2);margin-top:5px}
+.cond p em{font-style:normal;margin:0 6px;opacity:.5}
+.clock{position:absolute;right:24px;top:118px;z-index:3;text-align:right}
+.clock b{font-size:34px;font-weight:300;letter-spacing:1px}
+.clock b small{font-size:14px;color:var(--ink3);margin-left:3px;letter-spacing:0}
+.clock p{font-size:12px;color:var(--ink2);margin-top:3px;line-height:1.6}
+
+.stats{position:absolute;left:16px;right:16px;bottom:14px;z-index:3;height:64px;border-radius:20px;display:grid;grid-template-columns:repeat(4,1fr);
+  background:rgba(255,255,255,.48);backdrop-filter:blur(18px) saturate(1.4);border:1px solid rgba(255,255,255,.75);box-shadow:0 6px 18px rgba(40,70,100,.08)}
+.night .stats{background:rgba(30,36,80,.5);border-color:rgba(255,255,255,.09);box-shadow:none}
+.stats div{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;position:relative}
+.stats div+div::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:1px;background:var(--track)}
+.stats span{font-size:11px;color:var(--ink2)}
+.stats b{font-size:16px;font-weight:500}
+.stats b i{font-style:normal;font-size:11px;font-weight:500;padding:1px 6px;border-radius:8px;margin-left:4px;vertical-align:2px}
+.aqi-good{background:#DDF3E4;color:#2F8A55}
+.night .aqi-good{background:rgba(110,220,160,.16);color:#8EE3B4}
+
+/* ---- cards ---- */
+.body{padding:0 16px;display:flex;flex-direction:column;gap:10px;position:relative;z-index:2}
+.card{background:var(--card);border:1px solid var(--cardline);border-radius:22px;padding:16px 18px;backdrop-filter:blur(24px) saturate(1.3);
+  box-shadow:0 8px 24px -10px rgba(50,80,120,.18);color:var(--ink)}
+.night .card{box-shadow:0 10px 30px -12px rgba(0,0,0,.45)}
+.ch{display:flex;justify-content:space-between;align-items:baseline}
+.ch h3{font-size:15px;font-weight:500;display:flex;align-items:center;gap:7px}
+.ch h3 .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.ch span{font-size:11px;color:var(--ink3)}
+.nc-title{font-size:17px;font-weight:500;margin-top:8px;display:flex;align-items:center;gap:8px}
+.nc-title .tag{font-size:11px;font-weight:500;color:var(--rain);background:color-mix(in srgb,var(--rain) 14%,transparent);padding:3px 8px;border-radius:9px}
+.nc-sub{font-size:12px;color:var(--ink2);margin-top:3px}
+.chart{display:block;margin-top:8px}
+.ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink3);margin-top:2px}
+.week .row{display:grid;grid-template-columns:52px 34px 30px 30px 1fr 32px;align-items:center;height:41px;font-size:14px}
+.week .row+.row{border-top:1px solid var(--track)}
+.week .d{font-weight:500}.week .d small{display:block;font-size:10.5px;font-weight:400;color:var(--ink3)}
+.week .pop{font-size:10.5px;color:var(--rain);text-align:left}
+.week .lo{color:var(--ink2);text-align:right;padding-right:10px}
+.week .hi{text-align:right;font-weight:500}
+.track{position:relative;height:6px;border-radius:3px;background:var(--track)}
+.track .fill{position:absolute;inset:0;border-radius:3px;background:linear-gradient(90deg,#6FB5F2,#93D4BC 38%,#F6CB62 68%,#F28E58)}
+.track .now{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff;box-shadow:0 0 0 2.5px var(--ink),0 2px 6px rgba(0,0,0,.25)}
+.night .track .fill{opacity:.9}
+
+/* ================= PILL ================= */
+.pill{width:248px;height:64px;border-radius:32px;position:relative;display:flex;align-items:center;overflow:hidden;font-family:HOS}
+.pill.day{color:#1D2938;background:linear-gradient(105deg,rgba(255,251,242,.95),rgba(228,240,251,.92));
+  box-shadow:0 8px 22px -6px rgba(30,60,100,.32),inset 0 0 0 1px rgba(255,255,255,.95),inset 0 -1px 0 rgba(120,150,190,.18)}
+.pill.night{color:#EEF1FC;background:linear-gradient(105deg,rgba(40,46,98,.95),rgba(24,28,62,.95));
+  box-shadow:0 8px 22px -6px rgba(5,8,30,.55),inset 0 0 0 1px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.12)}
+.pill .orb{width:48px;height:48px;border-radius:50%;margin-left:8px;flex:none;display:grid;place-items:center;position:relative;overflow:hidden}
+.pill.day .orb{background:radial-gradient(circle at 70% 25%,#FFF0C8,rgba(255,240,200,0) 60%),linear-gradient(180deg,#8BC3F0,#D3E8F7)}
+.pill.night .orb{background:radial-gradient(circle at 70% 25%,rgba(255,236,190,.35),rgba(0,0,0,0) 60%),linear-gradient(180deg,#141A44,#343A7A)}
+.pill.warn .orb{background:radial-gradient(circle at 50% 28%,#FFC766,#E2701F)}
+.pill .mid{flex:1;padding-left:10px;min-width:0}
+.pill .t{font-size:19px;font-weight:500;line-height:1.1;letter-spacing:.3px}
+.pill .t small{font-size:11px;font-weight:400;opacity:.45;margin-left:2px}
+.pill .s{font-size:11px;opacity:.62;margin-top:3px;white-space:nowrap}
+.pill .s.rain{opacity:1;color:#2F80D6;font-weight:500}
+.pill.night .s.rain{color:#8CC0FF}
+.pill .s.warn{opacity:1;color:#D9771C;font-weight:500}
+.pill .tp{font-size:32px;font-weight:300;padding-right:18px;letter-spacing:-1px}
+.pill .tp sup{font-size:14px;vertical-align:15px;margin-left:1px;opacity:.8}
+.pill .ribbon{position:absolute;left:28px;right:28px;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,rgba(59,140,224,0),#3B8CE0 30%,#7FC0FF 50%,#3B8CE0 70%,rgba(59,140,224,0));background-size:200% 100%;animation:shimmer 2.4s linear infinite}
+.pill.warn .ribbon{background:linear-gradient(90deg,rgba(240,150,40,0),#F09628 30%,#FFD27A 50%,#F09628 70%,rgba(240,150,40,0));background-size:200% 100%}
+@keyframes shimmer{to{background-position:-200% 0}}
+.zoom{width:496px;height:128px}
+.zoom .pill{transform:scale(2);transform-origin:0 0}
+
+/* pill sheet */
+.desk{height:236px;border-radius:22px;overflow:hidden;position:relative;margin-bottom:34px;
+  background:radial-gradient(500px 220px at 18% 30%,rgba(255,232,190,.9),rgba(255,232,190,0) 70%),linear-gradient(180deg,#9DC8EA 0%,#C8E0F0 50%,#E7EDE6 100%)}
+.desk .bar{position:absolute;left:0;right:0;top:0;height:6px;background:rgba(255,255,255,.35)}
+.desk .dock{position:absolute;top:0;left:604px}
+.desk .dock .pill{border-top-left-radius:32px}
+.desk .hint{position:absolute;left:604px;top:82px;width:248px;text-align:center;font-size:12px;color:rgba(30,45,65,.65)}
+.desk .hint b{display:block;width:1px;height:18px;margin:0 auto 6px;background:rgba(30,45,65,.35)}
+.desk .apps{position:absolute;left:40px;top:40px;display:grid;grid-template-columns:repeat(1,56px);gap:18px}
+.desk .apps i{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.55);display:block;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.desk .taskbar{position:absolute;left:0;right:0;bottom:0;height:40px;background:rgba(235,240,246,.75);backdrop-filter:blur(10px);display:flex;justify-content:center;align-items:center;gap:10px}
+.desk .taskbar i{width:26px;height:26px;border-radius:7px;background:rgba(40,60,90,.15)}
+.desk .wintag{position:absolute;right:18px;top:16px;font-size:11px;letter-spacing:2px;color:rgba(30,45,65,.5)}
+.grid2{display:grid;grid-template-columns:496px 496px;gap:26px 32px;margin-bottom:36px}
+.var .cap{font-size:13px;color:#4D463C;margin:12px 0 0;display:flex;gap:10px;align-items:baseline}
+.var .cap span{font-size:12px;color:#9A9083}
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px}
+.panel{background:#FBFAF7;border:1px solid #E7E2D8;border-radius:20px;padding:20px 22px}
+.panel h4{font-size:14px;font-weight:500;margin-bottom:14px;display:flex;justify-content:space-between}
+.panel h4 span{font-size:11px;color:#A79E90;letter-spacing:2px;font-weight:400}
+.story{display:flex;align-items:flex-start;gap:8px;margin-bottom:16px}
+.frame{display:flex;flex-direction:column;align-items:center;gap:10px}
+.frame .box{background:linear-gradient(180deg,#A9D2F3,#EEF2F2 60%,#F5F1EA);border-radius:16px;box-shadow:0 8px 18px -8px rgba(40,60,90,.35),inset 0 0 0 1px rgba(255,255,255,.8);position:relative;overflow:hidden}
+.frame .box::before{content:"";position:absolute;left:10%;right:10%;top:44%;height:8%;border-radius:6px;background:rgba(255,255,255,.7)}
+.frame .box::after{content:"";position:absolute;left:10%;right:10%;top:56%;height:26%;border-radius:8px;background:rgba(255,255,255,.6)}
+.frame small{font-size:11px;color:#8C8376;text-align:center;line-height:1.5}
+.arrow{align-self:center;color:#C8BFB0;font-size:18px;margin-top:-30px}
+.specs{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-top:6px}
+.specs div{font-size:12px;color:#5E574C;line-height:1.6;padding-left:12px;border-left:2px solid #EAD9BF}
+.specs b{display:block;font-size:12.5px;color:#2B2620;font-weight:500}
+.icons-row{display:flex;gap:14px;align-items:flex-end;margin-bottom:18px}
+.icons-row small{display:block;font-size:10px;color:#A79E90;text-align:center;margin-top:6px}
+.sw{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:6px}
+.sw i{display:block;height:34px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05)}
+.sw small{display:block;font-size:9.5px;color:#9A9083;margin-top:4px;text-align:center}
+.wx{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap}
+.wx > div{width:40px;height:40px;border-radius:12px;background:#EEF3F8;display:grid;place-items:center}
+.wx > div.n{background:#232858}
+</style>
+</head>
+<body>
+
+<!-- ======================== SHEET 1 : BIG WINDOW ======================== -->
+<section class="sheet" id="sheetBig">
+  <div class="sheet-head">
+    <div>
+      <h1>云上晴雨<b>·</b>天光</h1>
+      <div class="en">LIVING SKY / MAIN WINDOW 480 × 920 / DAY &amp; NIGHT</div>
+    </div>
+    <div class="note">窗口顶部即一块「活的天空」：天况直接画在天上，不再另放图标<br/>玻璃卡片沉在天空之下，只留<i>一个暖色强调点</i>，信息一眼读完</div>
+  </div>
+  <div class="cols">
+    <div><div class="lbl"><span>大窗 · 日间 · 多云（雨将至）</span><span>14:26</span></div><div id="winDay"></div></div>
+    <div><div class="lbl"><span>大窗 · 夜色 · 小雨</span><span>21:48</span></div><div id="winNight"></div></div>
+  </div>
+</section>
+
+<!-- ======================== SHEET 2 : PILL ======================== -->
+<section class="sheet" id="sheetPill">
+  <div class="sheet-head">
+    <div>
+      <h1>云上晴雨<b>·</b>吸顶小窗</h1>
+      <div class="en">DOCKED PILL 248 × 64 / STATES / MOTION / ICONOGRAPHY</div>
+    </div>
+    <div class="note">左侧「天窗圆」是缩小的天空，随昼夜与天况换色<br/>有雨或预警时底边亮起<i>一道流光</i>，不弹窗、不打扰</div>
+  </div>
+
+  <div class="lbl"><span>实际尺寸 · 吸附在屏幕顶端（1×）</span><span>DESKTOP CONTEXT</span></div>
+  <div class="desk">
+    <div class="apps"><i></i><i></i><i></i></div>
+    <div class="wintag">WALLPAPER</div>
+    <div class="dock" id="dockPill"></div>
+    <div class="hint"><b></b>悬停 0.25s → 从小窗位置弹性展开为大窗</div>
+    <div class="taskbar"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="lbl"><span>四种状态 · 放大 2× 看细节</span><span>STATES @2X</span></div>
+  <div class="grid2" id="pillGrid"></div>
+
+  <div class="bottom">
+    <div class="panel">
+      <h4>动效 · 小窗 ⇄ 大窗<span>MOTION</span></h4>
+      <div class="story" id="story"></div>
+      <div class="specs">
+        <div><b>展开 · 弹性 420ms</b>cubic-bezier(.2,.9,.25,1.06)，圆角 32→30，内容 40ms 交错淡入上移 8px</div>
+        <div><b>收起 · 260ms</b>先淡出内容，再收拢为胶囊；温度数字原位保留，不跳动</div>
+        <div><b>天空层 · 三层视差</b>云团 60s / 90s / 140s 往返漂移，太阳光晕 6s 呼吸</div>
+        <div><b>雨 / 雪 / 星</b>Canvas 粒子，密度随降水强度；夜间星点 3.6s 闪烁</div>
+        <div><b>昼夜切换 · 1.2s</b>按日出日落，天空渐变交叉淡化，卡片颜色同步过渡</div>
+        <div><b>数字更新</b>温度变化时逐位滚动 600ms；小窗流光 2.4s 一周</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>应用图标 · 色彩<span>ICON</span></h4>
+      <div class="icons-row" id="appIcons"></div>
+      <div class="sw">
+        <div><i style="background:#7DB8EC"></i><small>晴空</small></div>
+        <div><i style="background:#FFD27A"></i><small>日光</small></div>
+        <div><i style="background:#F0A23A"></i><small>强调</small></div>
+        <div><i style="background:#3B8CE0"></i><small>雨</small></div>
+        <div><i style="background:#232858"></i><small>夜幕</small></div>
+        <div><i style="background:#F4D28A"></i><small>月光</small></div>
+      </div>
+      <div class="wx" id="wxIcons"></div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* ======================= ICONS ======================= */
+let uid = 0;
+const CLOUD = 'M13 38C7.5 38 4 34 4 29.4 4 25 7.4 21.5 11.9 21.2 13.4 15.3 18.6 11 24.8 11c6.7 0 12.1 4.8 13 11.1 4.3.6 7.2 4 7.2 8.1 0 4.3-3.5 7.8-7.9 7.8z';
+function icon(type, size, night) {
+  const id = 'g' + (uid++);
+  const cTop = night ? '#E3E8FA' : '#FFFFFF', cBot = night ? '#9AA6D2' : '#C4D8EE';
+  const sun = (cx, cy, r) => `
+    <radialGradient id="${id}s" cx=".4" cy=".38" r=".7"><stop offset="0" stop-color="#FFF6D6"/><stop offset=".45" stop-color="#FFD66E"/><stop offset="1" stop-color="#FFA63D"/></radialGradient>
+    <circle cx="${cx}" cy="${cy}" r="${r * 1.7}" fill="#FFD27A" opacity=".18"/>
+    ${[0,45,90,135,180,225,270,315].map(a => { const ra = a*Math.PI/180; return `<line x1="${cx+Math.cos(ra)*r*1.32}" y1="${cy+Math.sin(ra)*r*1.32}" x2="${cx+Math.cos(ra)*r*1.62}" y2="${cy+Math.sin(ra)*r*1.62}" stroke="#FFBE4D" stroke-width="${r*.2}" stroke-linecap="round" opacity=".9"/>`; }).join('')}
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}s)"/>`;
+  const moon = (cx, cy, r) => `
+    <radialGradient id="${id}m" cx=".35" cy=".35" r=".75"><stop offset="0" stop-color="#FFFBE8"/><stop offset="1" stop-color="#F0C96E"/></radialGradient>
+    <mask id="${id}k"><rect width="48" height="48" fill="#fff"/><circle cx="${cx + r*.55}" cy="${cy - r*.38}" r="${r*.86}" fill="#000"/></mask>
+    <circle cx="${cx}" cy="${cy}" r="${r*1.6}" fill="#FFE6A8" opacity=".12"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}m)" mask="url(#${id}k)"/>`;
+  const cloud = (tx, ty, s, dark) => `
+    <linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${dark ? '#C3CBDD' : cTop}"/><stop offset="1" stop-color="${dark ? '#7F8BA8' : cBot}"/></linearGradient>
+    <g transform="translate(${tx} ${ty}) scale(${s})"><path d="${CLOUD}" fill="rgba(40,70,120,.10)" transform="translate(0 1.6)"/><path d="${CLOUD}" fill="url(#${id}c)" stroke="rgba(255,255,255,.9)" stroke-width=".8"/></g>`;
+  const drops = (n, col) => [0,1,2].slice(0,n).map(i => `<line x1="${17+i*7}" y1="${39 + (i%2)*2}" x2="${15+i*7}" y2="${44+(i%2)*2}" stroke="${col}" stroke-width="2.4" stroke-linecap="round"/>`).join('');
+  let body = '';
+  const rc = night ? '#86BCFF' : '#4B9BEA';
+  switch (type) {
+    case 'sun': body = sun(24, 24, 10); break;
+    case 'moon': body = moon(22, 24, 12); break;
+    case 'cloud': body = cloud(0, 2, 1); break;
+    case 'partly': body = sun(17, 17, 8) + cloud(7, 9, .82); break;
+    case 'partly-n': body = moon(16, 16, 9) + cloud(7, 9, .82); break;
+    case 'rain': body = cloud(0, -3, 1) + drops(3, rc); break;
+    case 'thunder': body = cloud(0, -4, 1, true) + `<path d="M26 29l-6 9h5l-2.5 8 8-11h-5l2.5-6z" fill="#FFE27A" stroke="#7A4A10" stroke-opacity=".35" stroke-width=".8" stroke-linejoin="round"/>`; break;
+  }
+  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" style="overflow:visible;display:block">${body}</svg>`;
+}
+
+/* ======================= HELPERS ======================= */
+function smooth(pts) {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+const CLOUD_BIG = 'M22 78C8 78 0 70 2 60c2-10 12-15 22-13 2-16 16-28 34-27 9-14 25-21 42-17 15 3 26 14 30 27 5-3 12-4 18-2 13 4 20 15 18 27 10 1 18 9 18 18 0 3 0 5-2 7z';
+function cloudSvg(w, top, bot, op, blur) {
+  const id = 'cb' + (uid++);
+  return `<svg width="${w}" height="${w * .42}" viewBox="0 0 186 80" style="opacity:${op};filter:blur(${blur || 0}px);display:block">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bot}"/></linearGradient></defs>
+    <path d="${CLOUD_BIG}" fill="url(#${id})"/></svg>`;
+}
+const UI = {
+  pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
+  set: '<svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5M5 14v5h14v-5"/></svg>',
+};
+
+/* ======================= WINDOW ======================= */
+function buildWindow(el, o) {
+  const N = o.night;
+  // sky
+  let sky = '<div class="sky">';
+  if (N) {
+    sky += '<div class="stars">' + Array.from({ length: 38 }, (_, i) => {
+      const x = (i * 97.3) % 470, y = (i * 53.7) % 210, s = i % 5 === 0 ? 2.6 : 1.6;
+      return `<i style="left:${x}px;top:${y}px;width:${s}px;height:${s}px;opacity:${.35 + (i % 4) * .15};animation-delay:${(i % 7) * .5}s"></i>`;
+    }).join('') + '</div>';
+    sky += '<div class="moon"></div>';
+    sky += `<div class="cloud" style="left:250px;top:98px;animation-duration:60s">${cloudSvg(230, '#4A5290', '#2C3266', .9, .6)}</div>`;
+    sky += `<div class="cloud" style="left:-50px;top:120px;animation-duration:90s">${cloudSvg(260, '#3C437F', '#262B5C', .85, 1)}</div>`;
+    sky += `<div class="cloud" style="left:180px;top:150px;animation-duration:140s">${cloudSvg(320, '#343B76', '#23285A', .9, 1.2)}</div>`;
+    sky += '<div class="rain">' + Array.from({ length: 46 }, (_, i) => `<i style="left:${(i * 41.7) % 500}px;top:${(i * 67) % 330}px;animation-delay:${-(i % 9) * .1}s;opacity:${.35 + (i % 3) * .2}"></i>`).join('') + '</div>';
+    sky += `<svg class="hills" width="480" height="120" viewBox="0 0 480 120" preserveAspectRatio="none">
+      <path d="M0 70C70 40 140 52 210 66s150 6 270-30V120H0z" fill="#262C62" opacity=".9"/>
+      <path d="M0 92c90-26 170-12 250 0s150 4 230-14V120H0z" fill="#20255A"/>
+      <path d="M0 112c120-14 260-14 480-4V120H0z" fill="#252A5C"/></svg>`;
+  } else {
+    sky += '<div class="sun"></div>';
+    sky += `<div class="cloud" style="left:268px;top:84px;animation-duration:60s">${cloudSvg(220, '#FFFFFF', '#E3EEF8', .96, .3)}</div>`;
+    sky += `<div class="cloud" style="left:-60px;top:20px;animation-duration:90s">${cloudSvg(200, '#FFFFFF', '#E8F1F9', .55, 1.4)}</div>`;
+    sky += `<div class="cloud" style="left:170px;top:150px;animation-duration:140s">${cloudSvg(330, '#FFFFFF', '#DCE9F5', .8, 1)}</div>`;
+    sky += `<svg class="birds" width="60" height="20" viewBox="0 0 60 20" fill="none" stroke="#3A5470" stroke-width="1.3" stroke-linecap="round"><path d="M2 8q4-4 8 0q4-4 8 0"/><path d="M30 14q3-3 6 0q3-3 6 0"/><path d="M46 4q2.5-2.5 5 0q2.5-2.5 5 0"/></svg>`;
+    sky += `<svg class="hills" width="480" height="120" viewBox="0 0 480 120" preserveAspectRatio="none">
+      <path d="M0 66C70 38 150 50 220 64s150 4 260-28V120H0z" fill="#B9D7C6" opacity=".75"/>
+      <path d="M0 90c90-26 170-12 250 0s150 4 230-14V120H0z" fill="#A5CBB3" opacity=".8"/>
+      <path d="M0 110c120-14 260-14 480-4V120H0z" fill="#DDEBF5"/></svg>`;
+  }
+  sky += '</div>';
+
+  const hero = `<div class="hero">${sky}
+    <div class="topbar"><div class="loc">${UI.pin.replace('<svg', '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"')}${o.city}<small>${o.street}</small></div>
+      <div class="ibtns"><div class="ibtn">${UI.share}</div><div class="ibtn">${UI.set}</div><div class="ibtn">${UI.x}</div></div></div>
+    <div class="temp num"><b>${o.temp}</b><sup>°</sup></div>
+    <div class="clock num"><b>${o.time}<small>${o.sec}</small></b><p>${o.date}<br/>${o.lunar}</p></div>
+    <div class="cond"><h2>${o.cond}</h2><p class="num">最高 ${o.hi}°<em>/</em>最低 ${o.lo}°<em>·</em>${o.sunText}</p></div>
+    <div class="stats num">
+      <div><span>体感</span><b>${o.feel}°</b></div>
+      <div><span>湿度</span><b>${o.hum}%</b></div>
+      <div><span>${o.windDir}</span><b>${o.wind}级</b></div>
+      <div><span>空气</span><b>${o.aqi}<i class="aqi-good">优</i></b></div>
+    </div></div>`;
+
+  // nowcast chart
+  const W = 410, H = 52;
+  const pts = o.rainFn.map((v, i) => [i * W / (o.rainFn.length - 1), H - 4 - v * (H - 12)]);
+  const line = smooth(pts);
+  const gid = 'nc' + (uid++);
+  const mk = o.marker;
+  const mx = mk.at * W;
+  const nowcast = `<div class="card">
+    <div class="ch"><h3><span class="dot" style="background:var(--rain);box-shadow:0 0 0 3px color-mix(in srgb,var(--rain) 22%,transparent)"></span>分钟级降水</h3><span>未来 2 小时 · 逐 5 分钟</span></div>
+    <div class="nc-title">${o.ncTitle}<span class="tag">${o.ncTag}</span></div>
+    <div class="nc-sub">${o.ncSub}</div>
+    <svg class="chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="overflow:visible">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--rain)" stop-opacity=".45"/><stop offset="1" stop-color="var(--rain)" stop-opacity="0"/></linearGradient></defs>
+      ${[0.25,.5,.75].map(f => `<line x1="${f*W}" x2="${f*W}" y1="4" y2="${H-4}" stroke="var(--track)" stroke-dasharray="2 3"/>`).join('')}
+      <line x1="0" x2="${W}" y1="${H-4}" y2="${H-4}" stroke="var(--track)" stroke-width="1.5"/>
+      <path d="${line} L${W},${H} L0,${H}Z" fill="url(#${gid})"/>
+      <path d="${line}" fill="none" stroke="var(--rain)" stroke-width="2" stroke-linecap="round"/>
+      <line x1="${mx}" x2="${mx}" y1="0" y2="${H-4}" stroke="var(--ink)" stroke-opacity=".35" stroke-width="1"/>
+      <circle cx="${mx}" cy="${H-4 - mk.v*(H-12)}" r="4" fill="var(--rain)" stroke="#fff" stroke-width="2"/>
+      <text x="${mx + 7}" y="10" font-size="10.5" fill="var(--ink2)" font-family="HOS">${mk.text}</text>
+    </svg>
+    <div class="ticks"><span>现在</span><span>30分</span><span>1小时</span><span>90分</span><span>2小时</span></div></div>`;
+
+  // hourly
+  const HW = 410, HH = 150, cw = HW / 8;
+  const temps = o.hours.map(h => h.t);
+  const tmin = Math.min(...temps), tmax = Math.max(...temps);
+  const cy = t => 104 - (t - tmin) / Math.max(1, tmax - tmin) * 22;
+  const hp = o.hours.map((h, i) => [cw * i + cw / 2, cy(h.t)]);
+  const hg = 'hg' + (uid++);
+  let hs = `<svg width="${HW}" height="${HH}" viewBox="0 0 ${HW} ${HH}" style="display:block;margin-top:10px;overflow:visible">
+    <defs><linearGradient id="${hg}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    <rect x="2" y="0" width="${cw - 4}" height="${HH}" rx="14" fill="var(--accent)" opacity="${N ? .12 : .14}"/>
+    <path d="${smooth(hp)} L${hp[7][0]},118 L${hp[0][0]},118Z" fill="url(#${hg})"/>
+    <path d="${smooth(hp)}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>`;
+  o.hours.forEach((h, i) => {
+    const x = cw * i + cw / 2;
+    hs += `<text x="${x}" y="17" text-anchor="middle" font-size="11.5" fill="${i ? 'var(--ink2)' : 'var(--ink)'}" font-weight="${i ? 400 : 500}" font-family="HOS">${h.h}</text>`;
+    hs += `<svg x="${x - 13}" y="25" width="26" height="26" viewBox="0 0 48 48" style="overflow:visible">${icon(h.ic, 48, N).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}</svg>`;
+    hs += `<text x="${x}" y="${hp[i][1] - 9}" text-anchor="middle" font-size="13.5" font-weight="500" fill="var(--ink)" font-family="HOS">${h.t}°</text>`;
+    hs += `<circle cx="${x}" cy="${hp[i][1]}" r="${i ? 2.6 : 3.6}" fill="${i ? 'var(--card)' : 'var(--accent)'}" stroke="var(--accent)" stroke-width="1.8"/>`;
+    const bh = Math.max(2, h.p / 100 * 14);
+    hs += `<rect x="${x - 9}" y="${133 - bh}" width="18" height="${bh}" rx="2" fill="var(--rain)" opacity="${h.p ? .25 + h.p / 140 : .15}"/>`;
+    hs += `<text x="${x}" y="148" text-anchor="middle" font-size="10" fill="${h.p >= 50 ? 'var(--rain)' : 'var(--ink3)'}" font-family="HOS">${h.p}%</text>`;
+  });
+  hs += '</svg>';
+  const hourly = `<div class="card"><div class="ch"><h3><span class="dot"></span>逐时预报</h3><span>温度 · 降水概率 · 24 小时可横滑</span></div>${hs}</div>`;
+
+  // week
+  const all = o.week.flatMap(d => [d.lo, d.hi]);
+  const wmin = Math.min(...all), wmax = Math.max(...all);
+  const pct = t => (t - wmin) / (wmax - wmin) * 100;
+  const rows = o.week.map((d, i) => `<div class="row num">
+      <div class="d">${d.d}<small>${d.dt}</small></div>
+      <div>${icon(d.ic, 26, N && i === 0)}</div>
+      <div class="pop">${d.p ? d.p + '%' : ''}</div>
+      <div class="lo">${d.lo}°</div>
+      <div class="track"><div class="fill" style="clip-path:inset(0 ${100 - pct(d.hi)}% 0 ${pct(d.lo)}% round 3px)"></div>${i === 0 ? `<div class="now" style="left:${pct(o.temp)}%"></div>` : ''}</div>
+      <div class="hi">${d.hi}°</div></div>`).join('');
+  const week = `<div class="card week"><div class="ch" style="margin-bottom:4px"><h3><span class="dot"></span>七日预报</h3><span>● 当前温度</span></div>${rows}</div>`;
+
+  el.innerHTML = `<div class="win ${N ? 'night' : 'day'}">${hero}<div class="body">${nowcast}${hourly}${week}</div></div>`;
+}
+
+/* ======================= DATA ======================= */
+const rainDay = Array.from({ length: 25 }, (_, i) => { const m = i * 5; if (m < 20) return 0; return Math.max(0, Math.sin(Math.min(1, (m - 20) / 95) * Math.PI) * .92 * (m < 60 ? 1 : 1 - (m - 60) / 260)); });
+const rainNight = Array.from({ length: 25 }, (_, i) => { const m = i * 5; if (m > 40) return 0; return .72 * Math.cos(m / 40 * Math.PI / 2) + (m < 10 ? .05 : 0); });
+const DAY = {
+  night: false, city: '慈溪', street: '浒山街道', temp: 26, time: '14:26', sec: '38', date: '11月24日 周二', lunar: '十月十六 · 小雪后两天',
+  cond: '多云 · 雨将至', hi: 27, lo: 19, sunText: '日落 16:58', feel: 28, hum: 76, windDir: '东南风', wind: 3, aqi: 42,
+  rainFn: rainDay, marker: { at: 20 / 120, v: 0, text: '约 20 分钟后开始' },
+  ncTitle: '约 20 分钟后有小雨', ncTag: '记得带伞', ncSub: '雨势在 1 小时左右最大，约 0.9 mm/h，傍晚前转小',
+  hours: [{ h: '现在', t: 26, ic: 'partly', p: 0 }, { h: '15时', t: 26, ic: 'partly', p: 10 }, { h: '16时', t: 25, ic: 'cloud', p: 30 }, { h: '17时', t: 23, ic: 'rain', p: 70 },
+    { h: '18时', t: 22, ic: 'rain', p: 75 }, { h: '19时', t: 21, ic: 'rain', p: 40 }, { h: '20时', t: 20, ic: 'cloud', p: 20 }, { h: '21时', t: 19, ic: 'partly-n', p: 10 }],
+  week: [{ d: '今天', dt: '11/24', ic: 'rain', p: 75, lo: 19, hi: 27 }, { d: '周三', dt: '11/25', ic: 'rain', p: 60, lo: 17, hi: 24 }, { d: '周四', dt: '11/26', ic: 'cloud', p: 20, lo: 15, hi: 21 },
+    { d: '周五', dt: '11/27', ic: 'sun', p: 0, lo: 13, hi: 22 }, { d: '周六', dt: '11/28', ic: 'partly', p: 10, lo: 14, hi: 23 }, { d: '周日', dt: '11/29', ic: 'thunder', p: 80, lo: 16, hi: 22 }],
+};
+const NIGHT = {
+  night: true, city: '慈溪', street: '浒山街道', temp: 19, time: '21:48', sec: '05', date: '11月24日 周二', lunar: '十月十六 · 小雪后两天',
+  cond: '小雨 · 渐停', hi: 27, lo: 17, sunText: '日出 06:21', feel: 18, hum: 88, windDir: '东风', wind: 2, aqi: 31,
+  rainFn: rainNight, marker: { at: 40 / 120, v: 0, text: '约 40 分钟后雨停' },
+  ncTitle: '小雨还会下约 40 分钟', ncTag: '出门带伞', ncSub: '雨势逐渐减弱，22:30 后转为阴天，夜里无雨',
+  hours: [{ h: '现在', t: 19, ic: 'rain', p: 80 }, { h: '23时', t: 19, ic: 'rain', p: 60 }, { h: '0时', t: 18, ic: 'cloud', p: 30 }, { h: '1时', t: 18, ic: 'cloud', p: 20 },
+    { h: '2时', t: 17, ic: 'partly-n', p: 10 }, { h: '3时', t: 17, ic: 'moon', p: 0 }, { h: '4时', t: 16, ic: 'moon', p: 0 }, { h: '5时', t: 16, ic: 'moon', p: 0 }],
+  week: DAY.week,
+};
+buildWindow(document.getElementById('winDay'), DAY);
+buildWindow(document.getElementById('winNight'), NIGHT);
+
+/* ======================= PILLS ======================= */
+function pill(o) {
+  return `<div class="pill ${o.cls}">
+    <div class="orb">${o.orb}</div>
+    <div class="mid"><div class="t num">${o.t}<small>${o.sec}</small></div><div class="s ${o.scls || ''}">${o.s}</div></div>
+    <div class="tp num">${o.tp}<sup>°</sup></div>${o.ribbon ? '<div class="ribbon"></div>' : ''}</div>`;
+}
+const P = {
+  day: { cls: 'day', orb: icon('partly', 34), t: '14:26', sec: '38', s: '周二 · 十月十六 · 多云', tp: 26 },
+  night: { cls: 'night', orb: icon('moon', 30, true), t: '23:40', sec: '12', s: '周二 · 十月十六 · 晴', tp: 17 },
+  rain: { cls: 'day', orb: icon('rain', 34), t: '14:26', sec: '38', s: '☂ 20 分钟后有小雨', scls: 'rain', tp: 26, ribbon: 1 },
+  warn: { cls: 'night warn', orb: icon('thunder', 34, true), t: '21:48', sec: '05', s: '⚠ 雷电黄色预警', scls: 'warn', tp: 19, ribbon: 1 },
+};
+document.getElementById('dockPill').innerHTML = pill(P.rain);
+document.getElementById('pillGrid').innerHTML = [
+  ['日间 · 常态', '天窗圆 = 晴空渐变 + 天况图标', P.day],
+  ['夜色 · 常态', '深靛玻璃，月光金作唯一亮色', P.night],
+  ['雨将至', '副行换成降水提示，底边蓝色流光', P.rain],
+  ['官方预警', '天窗圆转琥珀色，底边橙色流光', P.warn],
+].map(([a, b, p]) => `<div class="var"><div class="zoom">${pill(p)}</div><div class="cap">${a}<span>${b}</span></div></div>`).join('');
+
+/* storyboard */
+const fr = [[100, 26, '小窗<br/>常驻', 13], [120, 56, '0–120ms<br/>横向舒展', 18], [140, 112, '120–300ms<br/>向下生长', 20], [156, 190, '300–420ms<br/>回弹落定', 22]];
+document.getElementById('story').innerHTML = fr.map(([w, h, t, r], i) =>
+  `${i ? '<div class="arrow">→</div>' : ''}<div class="frame"><div class="box" style="width:${w}px;height:${h}px;border-radius:${r}px;${i === 0 ? 'background:linear-gradient(105deg,#FFFBF2,#E4F0FB)' : ''}">${i === 0 ? '' : ''}</div><small>${t}</small></div>`).join('');
+document.querySelector('#story .frame .box').style.cssText += ';box-shadow:0 6px 14px -6px rgba(30,60,100,.35),inset 0 0 0 1px #fff';
+document.head.insertAdjacentHTML('beforeend', '<style>#story .frame:first-child .box::before,#story .frame:first-child .box::after{display:none}</style>');
+
+/* app icon */
+function appIcon(s) {
+  const id = 'ai' + (uid++);
+  return `<svg width="${s}" height="${s}" viewBox="0 0 128 128">
+    <defs><linearGradient id="${id}b" x1="0" y1="0" x2=".3" y2="1"><stop offset="0" stop-color="#6FAEE8"/><stop offset=".62" stop-color="#B7DAF4"/><stop offset="1" stop-color="#FFE2B0"/></linearGradient>
+    <radialGradient id="${id}s" cx=".4" cy=".38" r=".7"><stop offset="0" stop-color="#FFF7DC"/><stop offset=".5" stop-color="#FFD670"/><stop offset="1" stop-color="#FFA53C"/></radialGradient>
+    <linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#DCE9F6"/></linearGradient>
+    <clipPath id="${id}k"><rect width="128" height="128" rx="30"/></clipPath></defs>
+    <g clip-path="url(#${id}k)"><rect width="128" height="128" fill="url(#${id}b)"/>
+    <circle cx="80" cy="44" r="40" fill="#FFE2A0" opacity=".35"/><circle cx="80" cy="44" r="22" fill="url(#${id}s)"/>
+    <path d="M0 108c30-14 60-12 90-2s30 6 38 2v20H0z" fill="#A8CDB6" opacity=".85"/>
+    <g transform="translate(14 46) scale(2)"><path d="${CLOUD}" fill="rgba(40,70,120,.12)" transform="translate(0 1.5)"/><path d="${CLOUD}" fill="url(#${id}c)"/></g>
+    <rect width="128" height="128" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="2" rx="30"/></g></svg>`;
+}
+document.getElementById('appIcons').innerHTML = [[96, '96'], [48, '48'], [24, '24']].map(([s, t]) => `<div>${appIcon(s)}<small>${t}px</small></div>`).join('');
+document.getElementById('wxIcons').innerHTML =
+  ['sun', 'partly', 'cloud', 'rain', 'thunder'].map(k => `<div>${icon(k, 28)}</div>`).join('') +
+  ['moon', 'partly-n'].map(k => `<div class="n">${icon(k, 28, true)}</div>`).join('');
+
+/* sheet selection via ?sheet= */
+const q = new URLSearchParams(location.search).get('sheet');
+if (q === 'big') document.body.classList.add('only-big');
+if (q === 'pill') document.body.classList.add('only-pill');
+if (new URLSearchParams(location.search).get('still') === '1') document.head.insertAdjacentHTML('beforeend', '<style>*{animation-play-state:paused!important}</style>');
+</script>
+</body>
+</html>

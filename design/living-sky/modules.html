@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>云上晴雨 · 天光 · 模块设计稿</title>
+<script src="land.js"></script>
+<style>
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Light.woff2) format('woff2');font-weight:300}
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Regular.woff2) format('woff2');font-weight:400}
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Medium.woff2) format('woff2');font-weight:500}
+@font-face{font-family:HOS;src:url(../../assets/fonts/HarmonyOS_Sans_SC_Bold.woff2) format('woff2');font-weight:700}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#F3F1EC;font-family:HOS,"Microsoft YaHei",sans-serif;color:#1E2836;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+body.s3 #sheet4,body.s4 #sheet3{display:none}
+
+.sheet{width:1656px;padding:44px 56px 56px}
+.sheet-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:22px;border-bottom:1px solid #DDD8CE;margin-bottom:26px}
+.sheet-head h1{font-size:30px;font-weight:500;letter-spacing:2px}
+.sheet-head h1 b{font-weight:300;color:#9A8F7E;margin:0 10px}
+.sheet-head .en{font-size:11px;letter-spacing:3.2px;color:#A49A8A;margin-top:8px}
+.sheet-head .note{text-align:right;font-size:13px;line-height:1.75;color:#7D7466}
+.sheet-head .note i{font-style:normal;color:#E0892E}
+.lbl{display:flex;justify-content:space-between;font-size:13px;color:#6F675B;margin-bottom:12px;letter-spacing:1px}
+.lbl span:last-child{font-size:11px;color:#A79E90;letter-spacing:2px}
+.cols{display:flex;gap:52px;align-items:flex-start}
+.col{width:480px}
+
+/* window strip = a scrolled section of the 480 window */
+.strip{width:480px;border-radius:30px;padding:16px;display:flex;flex-direction:column;gap:10px;position:relative}
+.strip+.lbl{margin-top:28px}
+.day{--ink:#1D2938;--ink2:rgba(29,41,56,.62);--ink3:rgba(29,41,56,.42);--card:rgba(255,255,255,.68);--cardline:rgba(255,255,255,.9);
+  --track:rgba(30,50,80,.08);--accent:#F0A23A;--rain:#3B8CE0;--soft:rgba(30,50,80,.045);--ok:#2F9A5E;--okbg:#DDF3E4;--bad:#D9573A;
+  background:linear-gradient(180deg,#E6EFF4,#F1F2EE 50%,#F5F1EA);box-shadow:0 24px 50px -24px rgba(40,60,90,.3),inset 0 0 0 1px rgba(255,255,255,.7)}
+.night{--ink:#EEF1FC;--ink2:rgba(226,232,255,.66);--ink3:rgba(226,232,255,.4);--card:rgba(38,44,90,.58);--cardline:rgba(255,255,255,.08);
+  --track:rgba(255,255,255,.09);--accent:#F4D28A;--rain:#7DB7FF;--soft:rgba(255,255,255,.05);--ok:#8EE3B4;--okbg:rgba(110,220,160,.16);--bad:#FF8C70;
+  background:linear-gradient(180deg,#1E2350,#181C40 50%,#14172F);box-shadow:0 24px 50px -24px rgba(10,14,40,.6),inset 0 0 0 1px rgba(255,255,255,.06)}
+.card{background:var(--card);border:1px solid var(--cardline);border-radius:22px;padding:16px 18px;color:var(--ink);
+  box-shadow:0 8px 24px -12px rgba(50,80,120,.2);position:relative;overflow:hidden}
+.night .card{box-shadow:0 10px 30px -14px rgba(0,0,0,.5)}
+.ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.ch h3{font-size:15px;font-weight:500;display:flex;align-items:center;gap:7px}
+.ch h3 .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.ch h3 em{font-style:normal;font-size:11px;font-weight:400;color:var(--ink3);margin-left:2px}
+.ch > span{font-size:11px;color:var(--ink3)}
+.seg{display:flex;background:var(--soft);border-radius:10px;padding:2px;font-size:11.5px}
+.seg b{font-weight:400;padding:4px 10px;border-radius:8px;color:var(--ink2)}
+.seg b.on{background:var(--card);color:var(--ink);font-weight:500;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.night .seg b.on{background:rgba(255,255,255,.12)}
+
+/* globe */
+.space{height:250px;border-radius:16px;position:relative;overflow:hidden;
+  background:radial-gradient(260px 200px at 50% 52%,#1F2B63 0,#121A42 55%,#0A0F2A 100%)}
+.space .st{position:absolute;width:1.6px;height:1.6px;border-radius:50%;background:#fff}
+.space canvas{position:absolute;left:0;top:0}
+.space .tag{position:absolute;font-size:10.5px;color:rgba(255,255,255,.55);letter-spacing:1px}
+.scrub{margin-top:14px}
+.scrub .tr{height:8px;border-radius:4px;position:relative;
+  background:linear-gradient(90deg,#26305E 0%,#2B3566 22%,#F4A86A 26.5%,#9CCBF0 31%,#9CCBF0 66%,#F59A63 70.6%,#2B3566 75%,#26305E 100%)}
+.scrub .th{position:absolute;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px var(--accent),0 3px 8px rgba(0,0,0,.25)}
+.scrub .lb{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink3);margin-top:7px}
+.quad4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.quad4 div{border-radius:14px;padding:10px 10px 9px;background:var(--soft)}
+.quad4 small{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink2)}
+.quad4 b{display:block;font-size:17px;font-weight:500;margin-top:4px}
+.quad4 i{font-style:normal;font-size:10px;color:var(--ink3)}
+.q-sr{background:linear-gradient(160deg,rgba(255,196,120,.28),rgba(255,196,120,.06))!important}
+.q-ss{background:linear-gradient(160deg,rgba(245,140,100,.24),rgba(245,140,100,.05))!important}
+.q-mr{background:linear-gradient(160deg,rgba(150,160,230,.26),rgba(150,160,230,.05))!important}
+.q-ms{background:linear-gradient(160deg,rgba(120,140,190,.22),rgba(120,140,190,.04))!important}
+
+/* duo */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.duo .card{padding:14px 15px}
+.aqi-top{display:flex;align-items:flex-end;justify-content:center;position:relative;height:84px}
+.aqi-top .n{position:absolute;bottom:2px;left:0;right:0;text-align:center}
+.aqi-top .n b{font-size:34px;font-weight:300;display:block;line-height:1}
+.aqi-top .n span{font-size:11px;font-weight:500;color:var(--ok);background:var(--okbg);padding:2px 8px;border-radius:8px}
+.pol{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.pol div{text-align:center;padding:6px 0;border-radius:10px;background:var(--soft)}
+.pol small{display:block;font-size:9.5px;color:var(--ink3)}
+.pol b{font-size:13px;font-weight:500}
+.life div.it{display:flex;align-items:center;gap:10px;padding:8px 0}
+.life div.it+div.it{border-top:1px solid var(--track)}
+.chip{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:none}
+.chip svg{width:17px;height:17px;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.life b{display:block;font-size:13px;font-weight:500}
+.life small{font-size:11px;color:var(--ink2)}
+
+/* alert & banner */
+.warnbar{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;
+  background:linear-gradient(100deg,rgba(255,206,92,.35),rgba(255,206,92,.12));border:1px solid rgba(240,170,40,.35)}
+.night .warnbar{background:linear-gradient(100deg,rgba(255,196,80,.2),rgba(255,196,80,.05));border-color:rgba(255,196,80,.25)}
+.warnbar .sig{width:38px;height:38px;border-radius:12px;background:linear-gradient(160deg,#FFD15C,#F2A51F);display:grid;place-items:center;color:#7A4A00;font-weight:700;font-size:13px;box-shadow:0 4px 10px -3px rgba(240,160,30,.6)}
+.warnbar b{font-size:14px;font-weight:500;display:block}
+.warnbar small{font-size:11px;color:var(--ink2)}
+.warnbar .go{margin-left:auto;font-size:11px;color:var(--ink3)}
+.tipbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:16px;background:color-mix(in srgb,var(--rain) 12%,transparent);font-size:12.5px;color:var(--ink)}
+.tipbar i{width:8px;height:8px;border-radius:50%;background:var(--rain);box-shadow:0 0 0 4px color-mix(in srgb,var(--rain) 20%,transparent);flex:none}
+.banner{display:flex;align-items:center;gap:12px;padding:12px 12px 12px 14px;border-radius:20px;background:rgba(30,36,60,.86);color:#fff;box-shadow:0 16px 32px -12px rgba(20,30,60,.5)}
+.banner .ic{width:36px;height:36px;border-radius:12px;background:linear-gradient(160deg,#7DB8EC,#FFD27A);display:grid;place-items:center}
+.banner b{font-size:13.5px;font-weight:500;display:block}
+.banner small{font-size:11px;opacity:.6}
+.btn{height:30px;padding:0 14px;border-radius:15px;font-size:12px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+.btn.pri{background:linear-gradient(180deg,#F6B04A,#EE9A2E);color:#fff;box-shadow:0 4px 10px -4px rgba(238,154,46,.7)}
+.btn.gh{background:rgba(255,255,255,.12);color:rgba(255,255,255,.8)}
+.btn.ln{background:var(--soft);color:var(--ink)}
+
+/* almanac */
+.alm-nav{display:flex;align-items:center;gap:6px}
+.alm-nav .ar{width:26px;height:26px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-size:14px;color:var(--ink2)}
+.alm-nav b{font-size:14px;font-weight:500;margin:0 4px}
+.wk{display:grid;grid-template-columns:repeat(7,1fr);font-size:11px;color:var(--ink3);text-align:center;margin-bottom:4px}
+.wk span:nth-child(n+6){color:var(--bad);opacity:.8}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);row-gap:2px}
+.cal div{height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:14px;position:relative}
+.cal b{font-size:15px;font-weight:500;line-height:1.1}
+.cal small{font-size:9.5px;color:var(--ink3);margin-top:2px}
+.cal .o{opacity:.32}
+.cal .we b{color:var(--bad)}
+.cal .term small{color:#D98324;font-weight:500}
+.cal .fest small{color:var(--rain);font-weight:500}
+.cal .today{background:linear-gradient(170deg,#F6B04A,#EE9A2E);box-shadow:0 6px 14px -6px rgba(238,154,46,.8)}
+.cal .today b,.cal .today small{color:#fff!important}
+.cal .ev::after{content:"";position:absolute;bottom:5px;width:4px;height:4px;border-radius:50%;background:var(--rain)}
+.cal .badge{position:absolute;top:3px;right:6px;font-size:8.5px;font-weight:500;color:#fff;background:#E2604A;border-radius:5px;padding:0 3px;line-height:13px}
+.alm-detail{display:flex;gap:14px;margin-top:12px;padding:14px;border-radius:18px;background:var(--soft)}
+.alm-detail .big{width:72px;height:80px;border-radius:14px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--card);border:1px solid var(--cardline)}
+.alm-detail .big small{font-size:10px;color:var(--ink3)}
+.alm-detail .big b{font-size:32px;font-weight:300;line-height:1.1}
+.alm-detail .big i{font-style:normal;font-size:10.5px;color:#D98324}
+.alm-detail h4{font-size:14px;font-weight:500}
+.alm-detail p{font-size:11px;color:var(--ink2);margin:3px 0 8px}
+.yj{display:flex;gap:6px;align-items:flex-start;font-size:11.5px;margin-top:4px}
+.yj em{font-style:normal;width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:500;color:#fff;flex:none}
+.yj span{line-height:18px;color:var(--ink)}
+.hours{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:8px}
+.hours div{text-align:center;padding:6px 0 5px;border-radius:9px;background:var(--soft);font-size:11.5px}
+.hours small{display:block;font-size:9px;margin-top:1px}
+.hours .j small{color:var(--ok)}.hours .x small{color:var(--bad)}
+.hours .cur{background:color-mix(in srgb,var(--accent) 22%,transparent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.mini{font-size:12px;font-weight:500;color:var(--ink2);margin-top:16px;display:flex;justify-content:space-between}
+.mini span{font-weight:400;color:var(--ink3);font-size:11px}
+.cats{display:flex;gap:6px;margin-top:8px}
+.cats b{font-size:11.5px;font-weight:400;padding:4px 11px;border-radius:12px;background:var(--soft);color:var(--ink2)}
+.cats b.on{background:var(--ink);color:var(--card);font-weight:500}
+.night .cats b.on{background:var(--accent);color:#1B1F45}
+.lucky{margin-top:6px}
+.lucky div{display:flex;align-items:center;gap:12px;padding:9px 2px}
+.lucky div+div{border-top:1px solid var(--track)}
+.lucky .d{width:38px;height:38px;border-radius:12px;background:var(--soft);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+.lucky .d b{font-size:15px;font-weight:500}.lucky .d small{font-size:9px;color:var(--ink3)}
+.lucky .t{flex:1;font-size:13px}.lucky .t small{display:block;font-size:10.5px;color:var(--ink3)}
+.lucky .tg{font-size:10.5px;padding:2px 8px;border-radius:8px;color:var(--ok);background:var(--okbg)}
+
+/* settings */
+.set{background:linear-gradient(180deg,#232859,#1A1E44);border-radius:30px;padding:20px 16px;color:var(--ink);box-shadow:0 24px 50px -24px rgba(10,14,40,.6),inset 0 0 0 1px rgba(255,255,255,.06)}
+.set.dayset{background:linear-gradient(180deg,#F4F6F7,#F1EFEA)}
+.set-h{display:flex;justify-content:space-between;align-items:center;padding:0 4px 14px}
+.set-h h2{font-size:19px;font-weight:500}
+.set-h .x{width:32px;height:32px;border-radius:50%;background:var(--soft);display:grid;place-items:center}
+.grp-t{font-size:11.5px;color:var(--ink3);margin:16px 6px 7px;letter-spacing:1px}
+.grp{background:var(--card);border:1px solid var(--cardline);border-radius:18px;overflow:hidden}
+.grp .r{display:flex;align-items:center;gap:10px;min-height:46px;padding:0 14px;font-size:13.5px}
+.grp .r+.r{border-top:1px solid var(--track)}
+.grp .r small{font-size:11px;color:var(--ink3);display:block;margin-top:1px}
+.grp .r .sp{flex:1}
+.grp .r .v{font-size:12.5px;color:var(--ink2)}
+.sw{width:40px;height:24px;border-radius:12px;background:var(--track);position:relative;flex:none}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.sw.on{background:linear-gradient(180deg,#F6B04A,#EE9A2E)}
+.sw.on::after{left:18px}
+.search{display:flex;gap:8px;margin-bottom:8px}
+.search .in{flex:1;height:40px;border-radius:14px;background:var(--soft);border:1px solid var(--cardline);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:13px;color:var(--ink3)}
+.search .in svg{width:15px;height:15px;stroke:var(--ink3);fill:none;stroke-width:2}
+.loc-r .pin{width:28px;height:28px;border-radius:9px;background:color-mix(in srgb,var(--accent) 18%,transparent);display:grid;place-items:center}
+.loc-r .ck{color:var(--accent);font-size:15px}
+.loc-r .t{font-size:13px}
+.hd{width:14px;display:flex;flex-direction:column;gap:3px;opacity:.4}
+.hd i{height:1.6px;background:var(--ink);border-radius:1px}
+.sg2{display:flex;background:var(--soft);border-radius:9px;padding:2px;font-size:11.5px}
+.sg2 b{font-weight:400;padding:3px 9px;border-radius:7px;color:var(--ink2)}
+.sg2 b.on{background:rgba(255,255,255,.14);color:var(--ink);font-weight:500}
+.dayset .sg2 b.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+/* ===== quad cards ===== */
+.grp-h{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);padding:2px 4px 0}
+.grp-h .hd{opacity:.5}
+.grp-h span{margin-left:auto;font-size:10.5px;color:var(--ink3)}
+.quad{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.xc{padding:13px 14px 14px;border-radius:20px;min-height:168px;display:flex;flex-direction:column}
+.xh{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.xh .chip{width:26px;height:26px;border-radius:9px}
+.xh .chip svg{width:15px;height:15px}
+.xh b{font-size:13px;font-weight:500}
+.xh .lk{margin-left:auto;width:20px;height:20px;border-radius:7px;background:var(--soft);display:grid;place-items:center}
+.xh .lk svg{width:10px;height:10px;stroke:var(--ink3);fill:none;stroke-width:2.2;stroke-linecap:round}
+.xv{font-size:26px;font-weight:300;line-height:1.05}
+.xv small{font-size:12px;font-weight:500;margin-left:6px;vertical-align:5px}
+.xs{font-size:11px;color:var(--ink2);margin-top:4px;line-height:1.5}
+.xb{margin-top:auto}
+.seg5{display:flex;gap:3px;margin-top:10px}
+.seg5 i{flex:1;height:5px;border-radius:3px;opacity:.28}
+.seg5 i.on{opacity:1;box-shadow:0 0 0 2px var(--card),0 0 0 3.5px currentColor}
+.mrow{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--ink2);margin-top:6px}
+.mrow span{width:28px}
+.mrow .tr{flex:1;height:5px;border-radius:3px;background:var(--track);position:relative;overflow:hidden}
+.mrow .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.mrow em{font-style:normal;width:22px;text-align:right;color:var(--ink)}
+.bars{display:flex;align-items:flex-end;gap:4px;height:44px;margin-top:8px}
+.bars i{flex:1;border-radius:3px 3px 1px 1px;background:var(--track)}
+.bars i.hl{background:var(--accent)}
+.bars.rain i.on{background:color-mix(in srgb,var(--rain) 70%,transparent)}
+.city{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px}
+.city+.city{border-top:1px solid var(--track)}
+.city b{font-weight:500;flex:1}.city small{font-size:10px;color:var(--ink3);margin-left:4px;font-weight:400}
+.city em{font-style:normal;font-size:15px;font-weight:300;width:30px;text-align:right}
+.city.on b{color:var(--ink)}
+.radar{height:96px;border-radius:12px;position:relative;overflow:hidden;
+  background:radial-gradient(circle at 46% 52%,#2B3A55,#1B2338 80%)}
+.radar .ring{position:absolute;left:50%;top:50%;border-radius:50%;border:1px solid rgba(255,255,255,.12);transform:translate(-50%,-50%)}
+.radar .sweep{position:absolute;left:50%;top:50%;width:150px;height:150px;transform:translate(-50%,-50%);border-radius:50%;
+  background:conic-gradient(from 20deg,rgba(120,230,170,.38),rgba(120,230,170,0) 70deg,transparent 360deg)}
+.radar .me{position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.25)}
+.rtl{display:flex;align-items:center;gap:8px;margin-top:8px}
+.rtl .pl{width:22px;height:22px;border-radius:50%;background:var(--accent);display:grid;place-items:center}
+.rtl .tr{flex:1;height:4px;border-radius:2px;background:var(--track);position:relative}
+.rtl .tr i{position:absolute;left:0;width:62%;top:0;bottom:0;border-radius:2px;background:var(--ink2)}
+.rtl .tr b{position:absolute;left:62%;top:50%;width:10px;height:10px;margin:-5px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--ink2)}
+.rtl small{font-size:10px;color:var(--ink3)}
+.rule{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:11.5px}
+.rule+.rule{border-top:1px solid var(--track)}
+.rule>span:first-child{flex:1}
+.rule .sw{width:30px;height:18px;flex:none}
+.rule .sw::after{width:14px;height:14px}
+.rule .sw.on::after{left:14px}
+.sharep{height:78px;border-radius:12px;position:relative;overflow:hidden;
+  background:radial-gradient(90px 60px at 78% 24%,rgba(255,226,160,.9),rgba(255,226,160,0)),linear-gradient(180deg,#7DB8EC,#CFE5F5);padding:10px 12px;color:#1D2938}
+.sharep b{font-size:28px;font-weight:300;line-height:1}
+.sharep small{display:block;font-size:10px;opacity:.7;margin-top:2px}
+.sharep i{position:absolute;right:10px;bottom:8px;font-style:normal;font-size:9px;opacity:.55}
+.sbtn{display:flex;gap:6px;margin-top:8px}
+.sbtn .btn{flex:1;height:28px;font-size:11.5px}
+
+.notes{background:#FBFAF7;border:1px solid #E7E2D8;border-radius:22px;padding:18px 22px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px 24px}
+.notes div{font-size:12px;color:#5E574C;line-height:1.6;padding-left:12px;border-left:2px solid #EAD9BF}
+.notes b{display:block;font-size:12.5px;color:#2B2620;font-weight:500}
+</style>
+</head>
+<body>
+
+<!-- ======================= SHEET 3 ======================= -->
+<section class="sheet" id="sheet3">
+  <div class="sheet-head">
+    <div><h1>云上晴雨<b>·</b>天光 · 核心模块</h1>
+      <div class="en">GLOBE / AIR &amp; LIFE / ALERTS / ALMANAC / SETTINGS · CARD WIDTH 448</div></div>
+    <div class="note">所有模块共用一套玻璃卡片：圆角 22 · 标题前一枚色点 · 次要信息退为浅灰<br/>日间奶油玻璃，夜间深靛玻璃，<i>琥珀色</i>只留给「当前 / 今天 / 开关已开」</div>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <div class="lbl"><span>昼夜地球 · 空气质量 · 生活指南</span><span>DAY</span></div>
+      <div class="strip day" id="c1"></div>
+      <div class="lbl"><span>提示条 · 官方预警 · 更新横幅</span><span>STATES</span></div>
+      <div class="strip day" id="c1b"></div>
+    </div>
+    <div class="col">
+      <div class="lbl"><span>万年历 · 宜忌 · 时辰 · 吉日</span><span>DAY</span></div>
+      <div class="strip day" id="c2"></div>
+    </div>
+    <div class="col">
+      <div class="lbl"><span>设置与地点（夜色）</span><span>SETTINGS · NIGHT</span></div>
+      <div class="set night" id="c3"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SHEET 4 ======================= -->
+<section class="sheet" id="sheet4">
+  <div class="sheet-head">
+    <div><h1>云上晴雨<b>·</b>天光 · 扩展四联卡</h1>
+      <div class="en">16 EXTENSION CARDS / 4 GROUPS · 219 × 168 EACH · DRAG ≡ TO REORDER</div></div>
+    <div class="note">每张卡固定结构：图标色块 + 标题 + ↗ 详情，正中一个大读数，底部一条可视化<br/>色块按主题区分：<i>暖</i>=阳光类 · 蓝=水汽类 · 紫=日月类 · 青=工具类</div>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <div class="lbl"><span>实时增强 · 生活指数</span><span>DAY</span></div>
+      <div class="strip day" id="q1"></div>
+    </div>
+    <div class="col">
+      <div class="lbl"><span>日月气候 · 玩法效率</span><span>DAY</span></div>
+      <div class="strip day" id="q2"></div>
+    </div>
+    <div class="col">
+      <div class="lbl"><span>夜色示例 · 日月气候 / 玩法效率</span><span>NIGHT</span></div>
+      <div class="strip night" id="q3"></div>
+    </div>
+  </div>
+  <div class="lbl" style="margin-top:28px"><span>卡面微动效规范</span><span>AMBIENT MOTION</span></div>
+  <div class="notes" id="notes"></div>
+</section>
+
+<script>
+let uid = 0;
+/* ---------- weather icons (same as concept.html) ---------- */
+const CLOUD = 'M13 38C7.5 38 4 34 4 29.4 4 25 7.4 21.5 11.9 21.2 13.4 15.3 18.6 11 24.8 11c6.7 0 12.1 4.8 13 11.1 4.3.6 7.2 4 7.2 8.1 0 4.3-3.5 7.8-7.9 7.8z';
+function icon(type, size, night) {
+  const id = 'g' + (uid++);
+  const cTop = night ? '#E3E8FA' : '#FFFFFF', cBot = night ? '#9AA6D2' : '#C4D8EE';
+  const sun = (cx, cy, r) => `<radialGradient id="${id}s" cx=".4" cy=".38" r=".7"><stop offset="0" stop-color="#FFF6D6"/><stop offset=".45" stop-color="#FFD66E"/><stop offset="1" stop-color="#FFA63D"/></radialGradient>
+    <circle cx="${cx}" cy="${cy}" r="${r * 1.7}" fill="#FFD27A" opacity=".18"/>${[0,45,90,135,180,225,270,315].map(a => { const ra = a*Math.PI/180; return `<line x1="${cx+Math.cos(ra)*r*1.32}" y1="${cy+Math.sin(ra)*r*1.32}" x2="${cx+Math.cos(ra)*r*1.62}" y2="${cy+Math.sin(ra)*r*1.62}" stroke="#FFBE4D" stroke-width="${r*.2}" stroke-linecap="round"/>`; }).join('')}<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}s)"/>`;
+  const moon = (cx, cy, r) => `<radialGradient id="${id}m" cx=".35" cy=".35" r=".75"><stop offset="0" stop-color="#FFFBE8"/><stop offset="1" stop-color="#F0C96E"/></radialGradient>
+    <mask id="${id}k"><rect width="48" height="48" fill="#fff"/><circle cx="${cx + r*.55}" cy="${cy - r*.38}" r="${r*.86}" fill="#000"/></mask><circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${id}m)" mask="url(#${id}k)"/>`;
+  const cloud = (tx, ty, s, dark) => `<linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${dark ? '#C3CBDD' : cTop}"/><stop offset="1" stop-color="${dark ? '#7F8BA8' : cBot}"/></linearGradient>
+    <g transform="translate(${tx} ${ty}) scale(${s})"><path d="${CLOUD}" fill="rgba(40,70,120,.10)" transform="translate(0 1.6)"/><path d="${CLOUD}" fill="url(#${id}c)" stroke="rgba(255,255,255,.9)" stroke-width=".8"/></g>`;
+  const rc = night ? '#86BCFF' : '#4B9BEA';
+  const drops = `${[0,1,2].map(i => `<line x1="${17+i*7}" y1="${39+(i%2)*2}" x2="${15+i*7}" y2="${44+(i%2)*2}" stroke="${rc}" stroke-width="2.4" stroke-linecap="round"/>`).join('')}`;
+  const b = { sun: () => sun(24,24,10), moon: () => moon(22,24,12), cloud: () => cloud(0,2,1), partly: () => sun(17,17,8)+cloud(7,9,.82),
+    'partly-n': () => moon(16,16,9)+cloud(7,9,.82), rain: () => cloud(0,-3,1)+drops,
+    thunder: () => cloud(0,-4,1,true)+'<path d="M26 29l-6 9h5l-2.5 8 8-11h-5l2.5-6z" fill="#FFE27A"/>' }[type]();
+  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" style="overflow:visible;display:block">${b}</svg>`;
+}
+/* ---------- line icons ---------- */
+const L = {
+  uv: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+  pollen: '<circle cx="12" cy="12" r="2.4"/><circle cx="12" cy="6" r="2.6"/><circle cx="12" cy="18" r="2.6"/><circle cx="6.5" cy="9" r="2.6"/><circle cx="17.5" cy="15" r="2.6"/><circle cx="6.5" cy="15" r="2.6"/><circle cx="17.5" cy="9" r="2.6"/>',
+  wind: '<circle cx="12" cy="12" r="9"/><path d="M12 6l2.5 6-2.5 6-2.5-6z"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  shirt: '<path d="M8 3.5L3.5 6.5l2 4 2-1V20.5h9V9.5l2 1 2-4L16 3.5c-.5 1.6-2 2.7-4 2.7S8.5 5.1 8 3.5z"/>',
+  car: '<path d="M4 16v-3.5L6 8h12l2 4.5V16z"/><path d="M4 16v2.5M20 16v2.5"/><circle cx="7.5" cy="13" r=".8"/><circle cx="16.5" cy="13" r=".8"/>',
+  hanger: '<path d="M12 8.5a2.2 2.2 0 1 1 2.2-2.2M12 8.5v1.5L3 16.5h18L12 10"/>',
+  thermo: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 11v6"/>',
+  moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+  chart: '<path d="M4 20h16M7 16v-4M12 16V7M17 16v-6"/>',
+  drop: '<path d="M12 3.5s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+  gauge: '<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>',
+  city: '<path d="M4 20V9l5-3v14M9 20V4h7v16M16 20v-9h4v9M3 20h18"/>',
+  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  image: '<rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3"/>',
+  shirt2: '<path d="M8 3.5L3.5 6.5l2 4 2-1V20.5h9V9.5l2 1 2-4L16 3.5"/>',
+  walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2-6 3 3v3M8.5 12l2-4.5 3.5 1 2 3.5M11 9.5l-1 5"/>',
+  run: '<circle cx="15" cy="4.5" r="1.8"/><path d="M6 20l4-4 2 1 1-5 3 3h3M9 10l3-2 3 1"/>',
+  umb: '<path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 12v6a2 2 0 0 1-4 0"/>',
+  link: '<path d="M8 16L16 8M9 8h7v7"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  play: '<path d="M9 6.5v11l9-5.5z"/>',
+  sunrise: '<path d="M3 18h18M6.5 18a5.5 5.5 0 0 1 11 0M12 4v4M9.5 6.5L12 4l2.5 2.5"/>',
+  sunset: '<path d="M3 18h18M6.5 18a5.5 5.5 0 0 1 11 0M12 4v4M9.5 5.5L12 8l2.5-2.5"/>',
+};
+const TONE = { warm: ['#FFF0D6', '#E58A1F'], blue: ['#E2F0FC', '#2F80D6'], violet: ['#ECE8FB', '#6E5FD0'], teal: ['#DDF3EF', '#1F8F7E'], rose: ['#FCE6E4', '#D4553F'], green: ['#E3F4E6', '#3C9A55'] };
+const TONE_N = { warm: ['rgba(255,190,100,.16)', '#FFC877'], blue: ['rgba(125,183,255,.16)', '#8CC0FF'], violet: ['rgba(170,150,255,.18)', '#B9A9FF'], teal: ['rgba(100,220,200,.15)', '#7FDCCB'], rose: ['rgba(255,140,120,.15)', '#FF9F8A'], green: ['rgba(120,220,150,.15)', '#8EE3B4'] };
+let NIGHT = false;
+function chip(k, tone, extra = '') {
+  const [bg, fg] = (NIGHT ? TONE_N : TONE)[tone];
+  return `<span class="chip" style="background:${bg};${extra}"><svg viewBox="0 0 24 24" style="stroke:${fg}">${L[k]}</svg></span>`;
+}
+const lk = `<span class="lk"><svg viewBox="0 0 24 24">${L.link}</svg></span>`;
+function smooth(pts) {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)},${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)},${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+/* ====================== GLOBE ====================== */
+function renderGlobe(cv, W, H) {
+  const dpr = 2; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  // land mask
+  const mw = 1440, mh = 720, m = document.createElement('canvas'); m.width = mw; m.height = mh;
+  const mc = m.getContext('2d'); mc.fillStyle = '#fff';
+  for (const [k, poly] of Object.entries(LAND)) {
+    const p = k === 'antarctica' ? [...poly, [180, -90], [-180, -90]] : poly;
+    mc.beginPath(); p.forEach(([lo, la], i) => { const x = (lo + 180) * 4, y = (90 - la) * 4; i ? mc.lineTo(x, y) : mc.moveTo(x, y); }); mc.closePath(); mc.fill();
+  }
+  const md = mc.getImageData(0, 0, mw, mh).data;
+  const land = (la, lo) => md[(Math.min(mh - 1, Math.floor((90 - la) * 4)) * mw + Math.min(mw - 1, Math.floor((lo + 180) * 4))) * 4] > 128;
+  const D = Math.PI / 180, R = 104 * dpr, cx = W / 2 * dpr, cy = (H / 2 + 2) * dpr;
+  const phi0 = 18 * D, lam0 = 112 * D, dS = -20.6 * D, lS = 83.5 * D;
+  const img = ctx.createImageData(cv.width, cv.height), px = img.data;
+  const mix = (a, b, t) => a + (b - a) * t;
+  for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+    const X = (x - cx) / R, Y = (cy - y) / R, rr = X * X + Y * Y;
+    if (rr > 1) continue;
+    const rho = Math.sqrt(rr), c = Math.asin(Math.min(1, rho)), z = Math.cos(c);
+    const lat = rho ? Math.asin(Math.cos(c) * Math.sin(phi0) + Y * Math.sin(c) * Math.cos(phi0) / rho) : phi0;
+    let lon = lam0 + Math.atan2(X * Math.sin(c), rho * Math.cos(c) * Math.cos(phi0) - Y * Math.sin(c) * Math.sin(phi0));
+    let lonD = ((lon / D + 540) % 360) - 180, latD = lat / D;
+    const cosZ = Math.sin(lat) * Math.sin(dS) + Math.cos(lat) * Math.cos(dS) * Math.cos(lon - lS);
+    const dayT = Math.min(1, Math.max(0, (cosZ + .08) / .16));
+    const isL = land(latD, lonD);
+    let dr, dg, db;
+    if (isL) {
+      const arid = (latD > 14 && latD < 34 && lonD > -15 && lonD < 60) || (latD > 36 && latD < 48 && lonD > 75 && lonD < 110) || (latD < -18 && latD > -32 && lonD > 118 && lonD < 142);
+      const ice = Math.abs(latD) > 66;
+      [dr, dg, db] = ice ? [236, 242, 248] : arid ? [222, 200, 150] : [138, 186, 132];
+    } else { const t = z; [dr, dg, db] = [mix(40, 74, t), mix(100, 150, t), mix(170, 214, t)]; }
+    const lit = .62 + .38 * Math.max(0, cosZ);
+    dr *= lit; dg *= lit; db *= lit;
+    let nr, ng, nb;
+    if (isL) { [nr, ng, nb] = [26, 34, 70]; const h = Math.abs(Math.sin(latD * 12.9898 + lonD * 78.233) * 43758.5453) % 1; if (h > .955 && Math.abs(latD) < 60) { const k = (h - .955) / .045; nr += 230 * k; ng += 170 * k; nb += 70 * k; } }
+    else [nr, ng, nb] = [12, 20, 50];
+    let r = mix(nr, dr, dayT), g = mix(ng, dg, dayT), b = mix(nb, db, dayT);
+    const tw = Math.max(0, 1 - Math.abs(cosZ) / .07); r += 70 * tw; g += 30 * tw; b -= 10 * tw;
+    const limb = .72 + .28 * Math.pow(z, .6); r *= limb; g *= limb; b *= limb;
+    const edge = Math.max(0, (rho - .9) / .1); r = mix(r, 120, edge * .35); g = mix(g, 170, edge * .35); b = mix(b, 255, edge * .45);
+    const i = (y * cv.width + x) * 4; px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = Math.min(255, (1 - rho) * R * 2 * 255);
+  }
+  ctx.putImageData(img, 0, 0);
+  // atmosphere
+  const ga = ctx.createRadialGradient(cx, cy, R * .96, cx, cy, R * 1.14);
+  ga.addColorStop(0, 'rgba(120,180,255,.55)'); ga.addColorStop(1, 'rgba(120,180,255,0)');
+  ctx.globalCompositeOperation = 'destination-over'; ctx.fillStyle = ga; ctx.beginPath(); ctx.arc(cx, cy, R * 1.14, 0, 7); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // project helper
+  const proj = (la, lo) => { la *= D; lo *= D; const cc = Math.sin(phi0) * Math.sin(la) + Math.cos(phi0) * Math.cos(la) * Math.cos(lo - lam0);
+    return { x: cx + R * Math.cos(la) * Math.sin(lo - lam0), y: cy - R * (Math.cos(phi0) * Math.sin(la) - Math.sin(phi0) * Math.cos(la) * Math.cos(lo - lam0)), v: cc > 0 }; };
+  // graticule
+  ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1;
+  for (let la = -60; la <= 60; la += 30) { ctx.beginPath(); let f = 1; for (let lo = -180; lo <= 180; lo += 3) { const p = proj(la, lo); if (!p.v) { f = 1; continue; } f ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); f = 0; } ctx.stroke(); }
+  for (let lo = -180; lo < 180; lo += 30) { ctx.beginPath(); let f = 1; for (let la = -90; la <= 90; la += 3) { const p = proj(la, lo); if (!p.v) { f = 1; continue; } f ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); f = 0; } ctx.stroke(); }
+  // labels
+  ctx.font = `${10.5 * dpr}px HOS`; ctx.textAlign = 'center';
+  [['亚洲', 45, 92], ['大洋洲', -25, 133], ['非洲', 5, 22], ['欧洲', 54, 18]].forEach(([t, la, lo]) => { const p = proj(la, lo); if (p.v) { ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.fillText(t, p.x, p.y); } });
+  // me
+  const me = proj(30.2, 121.3);
+  ctx.fillStyle = 'rgba(255,210,122,.25)'; ctx.beginPath(); ctx.arc(me.x, me.y, 11 * dpr, 0, 7); ctx.fill();
+  ctx.fillStyle = '#FFD27A'; ctx.beginPath(); ctx.arc(me.x, me.y, 4 * dpr, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = `500 ${11 * dpr}px HOS`; ctx.textAlign = 'left'; ctx.fillText('慈溪', me.x + 9 * dpr, me.y - 7 * dpr);
+  // sun & moon on ring
+  const sx = Math.cos(dS) * Math.sin(lS - lam0), sy = Math.cos(phi0) * Math.sin(dS) - Math.sin(phi0) * Math.cos(dS) * Math.cos(lS - lam0);
+  const n = Math.hypot(sx, sy), ring = R * 1.24, sp = { x: cx + sx / n * ring, y: cy - sy / n * ring };
+  const gs = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, 34 * dpr); gs.addColorStop(0, 'rgba(255,220,140,.9)'); gs.addColorStop(.3, 'rgba(255,200,110,.35)'); gs.addColorStop(1, 'rgba(255,200,110,0)');
+  ctx.fillStyle = gs; ctx.beginPath(); ctx.arc(sp.x, sp.y, 34 * dpr, 0, 7); ctx.fill();
+  ctx.fillStyle = '#FFE9A8'; ctx.beginPath(); ctx.arc(sp.x, sp.y, 9 * dpr, 0, 7); ctx.fill();
+  const mp = { x: cx - sx / n * ring * .98 + 30 * dpr, y: cy + sy / n * ring * .98 - 10 * dpr };
+  ctx.fillStyle = 'rgba(255,240,200,.18)'; ctx.beginPath(); ctx.arc(mp.x, mp.y, 15 * dpr, 0, 7); ctx.fill();
+  ctx.fillStyle = '#F6EBC8'; ctx.beginPath(); ctx.arc(mp.x, mp.y, 7 * dpr, 0, 7); ctx.fill();
+}
+
+/* ====================== SHEET 3 ====================== */
+function globeCard() {
+  const stars = Array.from({ length: 50 }, (_, i) => `<i class="st" style="left:${(i * 83.7) % 414}px;top:${(i * 47.3) % 248}px;opacity:${.2 + (i % 5) * .12}"></i>`).join('');
+  return `<div class="card"><div class="ch"><h3><span class="dot"></span>昼夜地球<em>晨昏线 · 实时</em></h3><div class="seg"><b class="on">真实自转</b><b>演示 45s</b></div></div>
+    <div class="space">${stars}<canvas id="globe"></canvas><span class="tag" style="left:12px;bottom:10px">拖拽旋转 · 双击复位</span><span class="tag" style="right:12px;bottom:10px">太阳直射 20.6°S</span></div>
+    <div class="scrub"><div class="tr"><div class="th" style="left:${14.43 / 24 * 100}%"></div></div>
+      <div class="lb num"><span>0:00</span><span>06:21 日出</span><span>12:00</span><span>16:58 日落</span><span>24:00</span></div></div>
+    <div class="quad4 num">
+      <div class="q-sr"><small>${svgI('sunrise', '#E58A1F')}日出</small><b>06:21</b><i>已过 8h05m</i></div>
+      <div class="q-ss"><small>${svgI('sunset', '#D9573A')}日落</small><b>16:58</b><i>还有 2h32m</i></div>
+      <div class="q-mr"><small>${svgI('moon', '#6E5FD0')}月出</small><b>16:41</b><i>既望 · 99%</i></div>
+      <div class="q-ms"><small>${svgI('moon', '#5A6A9A')}月落</small><b>05:32</b><i>明日</i></div>
+    </div></div>`;
+}
+function svgI(k, c, s = 13) { return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" style="fill:none;stroke:${c};stroke-width:2;stroke-linecap:round;stroke-linejoin:round">${L[k]}</svg>`; }
+function duo() {
+  const f = 42 / 300, a0 = Math.PI, a = a0 - f * Math.PI, R = 56, cx = 70, cy = 70;
+  const pt = (t) => [cx + R * Math.cos(t), cy - R * Math.sin(t)];
+  const [px, py] = pt(a);
+  const gauge = `<svg width="140" height="82" viewBox="0 0 140 82" style="position:absolute;top:0;left:50%;margin-left:-70px">
+    <defs><linearGradient id="aq" x1="0" x2="1"><stop offset="0" stop-color="#5CCB8A"/><stop offset=".3" stop-color="#F5D048"/><stop offset=".55" stop-color="#F59A3C"/><stop offset=".78" stop-color="#E5533D"/><stop offset="1" stop-color="#8E4FB8"/></linearGradient></defs>
+    <path d="M14 70A56 56 0 0 1 126 70" fill="none" stroke="var(--track)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M14 70A56 56 0 0 1 126 70" fill="none" stroke="url(#aq)" stroke-width="9" stroke-linecap="round" opacity=".9"/>
+    <circle cx="${px}" cy="${py}" r="7" fill="#fff" stroke="#5CCB8A" stroke-width="3"/></svg>`;
+  const life = [['shirt2', 'warm', '穿衣', '薄外套 + 长袖'], ['umb', 'blue', '出行', '17 时后有雨，带伞'], ['uv', 'warm', '紫外线', '弱 · 无需特别防护'], ['run', 'green', '运动', '午后转雨，宜室内']];
+  return `<div class="duo">
+    <div class="card"><div class="ch" style="margin-bottom:6px"><h3><span class="dot" style="background:#5CCB8A;box-shadow:0 0 0 3px rgba(92,203,138,.2)"></span>空气质量</h3></div>
+      <div class="aqi-top">${gauge}<div class="n num"><b>42</b><span>优 · 空气清新</span></div></div>
+      <div class="pol num">${[['PM2.5', 18], ['PM10', 36], ['O₃', 72], ['NO₂', 21], ['SO₂', 5], ['CO', 0.6]].map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div></div>
+    <div class="card life"><div class="ch" style="margin-bottom:2px"><h3><span class="dot"></span>生活指南</h3></div>
+      ${life.map(([i, t, a, b]) => `<div class="it">${chip(i, t)}<div><b>${a}</b><small>${b}</small></div></div>`).join('')}</div></div>`;
+}
+function states() {
+  return `<div class="tipbar"><i></i>周三有中雨，降水概率 60%，记得提前收衣服</div>
+  <div class="warnbar"><div class="sig">雷电</div><div><b>雷电黄色预警</b><small>慈溪市气象台 · 14:05 发布 · 未来 6 小时</small></div><span class="go">详情 ›</span></div>
+  <div class="banner"><div class="ic">${icon('partly', 26)}</div><div style="flex:1"><b>发现新版本 v1.1.0</b><small>天光界面焕新 · 12.4 MB</small></div><span class="btn gh">稍后</span><span class="btn pri">立即更新</span></div>`;
+}
+function almanac() {
+  // Nov 2026, Monday-first; Nov 1 = Sunday
+  const lunarOct = ['', '初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十', '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
+  const cells = [];
+  for (let d = 26; d <= 31; d++) cells.push({ d, o: 1, l: lunarOct[d - 26 + 17] });
+  for (let d = 1; d <= 30; d++) {
+    let l, cls = '';
+    if (d <= 8) l = lunarOct[d + 22]; else if (d === 9) { l = '十月'; } else l = lunarOct[d - 8];
+    if (d === 7) { l = '立冬'; cls = 'term'; } if (d === 22) { l = '小雪'; cls = 'term'; } if (d === 23) { l = '下元节'; cls = 'fest'; }
+    cells.push({ d, l, cls });
+  }
+  for (let d = 1; d <= 6; d++) cells.push({ d, o: 1, l: lunarOct[d + 22] });
+  const grid = cells.map((c, i) => { const we = i % 7 >= 5; const today = !c.o && c.d === 24;
+    return `<div class="${c.o ? 'o' : ''} ${we ? 'we' : ''} ${c.cls || ''} ${today ? 'today' : ''} ${!c.o && [26, 29].includes(c.d) ? 'ev' : ''}"><b class="num">${c.d}</b><small>${c.l}</small></div>`; }).join('');
+  const zhi = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'], jx = [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0];
+  return `<div class="card"><div class="ch"><h3><span class="dot"></span>万年历<em>择吉 · 宜忌</em></h3>
+      <div class="alm-nav"><span class="ar">‹</span><b class="num">2026年11月</b><span class="ar">›</span><span class="btn ln" style="height:26px;padding:0 10px;font-size:11.5px">今天</span></div></div>
+    <div class="wk"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+    <div class="cal">${grid}</div>
+    <div class="alm-detail"><div class="big"><small>十一月</small><b class="num">24</b><i>十月十六</i></div>
+      <div style="flex:1"><h4>星期二 · 农历十月十六</h4><p>丙午马年 · 己亥月 · 小雪后第 2 天</p>
+        <div class="yj"><em style="background:#3C9A55">宜</em><span>祭祀 · 出行 · 纳财 · 会友 · 裁衣</span></div>
+        <div class="yj"><em style="background:#D4553F">忌</em><span>动土 · 安葬 · 开仓</span></div></div></div>
+    <div class="mini">今日时辰吉凶<span>当前 未时 13–15 点</span></div>
+    <div class="hours">${zhi.map((z, i) => `<div class="${jx[i] ? 'j' : 'x'} ${i === 7 ? 'cur' : ''}">${z}<small>${jx[i] ? '吉' : '凶'}</small></div>`).join('')}</div>
+    <div class="mini">本月吉日 · 良辰吉日<span>还有 6 个吉日</span></div>
+    <div class="cats"><b class="on">嫁娶</b><b>搬家</b><b>开业</b><b>出行</b><b>签约</b></div>
+    <div class="lucky num">
+      <div><div class="d"><b>26</b><small>周四</small></div><div class="t">11月26日 周四<small>农历十月十八 · 宜嫁娶 纳采</small></div><span class="tg">大吉</span></div>
+      <div><div class="d"><b>29</b><small>周日</small></div><div class="t">11月29日 周日<small>农历十月廿一 · 宜嫁娶 订盟</small></div><span class="tg">吉</span></div>
+      <div><div class="d"><b>3</b><small>周四</small></div><div class="t">12月3日 周四<small>农历十月廿五 · 宜嫁娶 出行</small></div><span class="tg">吉</span></div>
+    </div></div>`;
+}
+function settings() {
+  const sw = on => `<span class="sw ${on ? 'on' : ''}"></span>`;
+  const hd = '<span class="hd"><i></i><i></i><i></i></span>';
+  return `<div class="set-h"><h2>设置与地点</h2><span class="x">${svgI('x', 'var(--ink2)', 15)}</span></div>
+    <div class="search"><div class="in">${'<svg viewBox="0 0 24 24">' + L.search + '</svg>'}搜索城市 / 区县，例如：慈溪</div><span class="btn pri" style="height:40px;border-radius:14px;padding:0 16px">搜索</span></div>
+    <div class="grp">
+      <div class="r loc-r"><span class="pin">${svgI('pin', 'var(--accent)', 15)}</span><div class="sp"><div class="t">使用当前位置</div><small>IP 三源投票 · 精确到区县</small></div><span class="v">›</span></div>
+      <div class="r loc-r">${hd}<div class="sp"><div class="t">慈溪 · 浒山街道</div><small>浙江 宁波</small></div><span class="ck">✓</span></div>
+      <div class="r loc-r">${hd}<div class="sp"><div class="t">九龍 · 旺角</div><small>香港 油尖旺區</small></div><span class="v">19°</span></div>
+    </div>
+    <div class="grp-t">显示</div>
+    <div class="grp">
+      <div class="r"><span class="sp">温度单位</span><div class="sg2"><b class="on">°C</b><b>°F</b></div></div>
+      <div class="r"><span class="sp">风力单位</span><div class="sg2"><b class="on">等级</b><b>km/h</b><b>m/s</b></div></div>
+      <div class="r"><span class="sp">更新频率</span><span class="v">每 10 分钟 ›</span></div>
+      <div class="r"><span class="sp">动效</span><div class="sg2"><b class="on">开启</b><b>关闭</b></div></div>
+    </div>
+    <div class="grp-t">窗口</div>
+    <div class="grp">
+      <div class="r"><div class="sp">窗口置顶</div>${sw(1)}</div>
+      <div class="r"><div class="sp">开机自动启动</div>${sw(0)}</div>
+      <div class="r"><div class="sp">顶部吸附<small>拖到屏幕顶端收起为小窗，悬停展开</small></div>${sw(1)}</div>
+    </div>
+    <div class="grp-t">提醒与托盘</div>
+    <div class="grp">
+      <div class="r"><div class="sp">托盘显示实时温度</div>${sw(1)}</div>
+      <div class="r"><div class="sp">天气早晚报<small>每天 8:00 / 20:00</small></div>${sw(1)}</div>
+      <div class="r"><div class="sp">预警与突变推送<small>仅新增或升级时通知</small></div>${sw(1)}</div>
+    </div>
+    <div class="grp-t">显示模块 · 按住 ≡ 拖动排序</div>
+    <div class="grp">
+      ${[['昼夜地球', 1], ['逐时预报', 1], ['七日预报', 1], ['空气质量 · 生活指南', 1], ['扩展四联卡 · 16 张', 1], ['万年历', 0]].map(([t, on]) => `<div class="r">${hd}<div class="sp">${t}</div>${sw(on)}</div>`).join('')}
+    </div>
+    <div class="grp-t">软件更新</div>
+    <div class="grp"><div class="r"><div class="sp">当前版本 1.0.29<small>上次检查 15:20 · 已是最新</small></div><span class="btn ln" style="height:28px">检查更新</span></div></div>`;
+}
+
+/* ====================== SHEET 4 : QUAD ====================== */
+const hdH = '<span class="hd"><i></i><i></i><i></i></span>';
+function xcard(ic, tone, title, link, body) { return `<div class="card xc"><div class="xh">${chip(ic, tone)}<b>${title}</b>${link ? lk : ''}</div>${body}</div>`; }
+function quadReal() {
+  const uvc = ['#5CCB8A', '#F5D048', '#F59A3C', '#E5533D', '#8E4FB8'];
+  return `<div class="grp-h">${hdH}实时增强<span>4 / 4 已开启</span></div><div class="quad">
+    ${xcard('uv', 'warm', '紫外线防护', 1, `<div class="xv num">3<small style="color:#D9A400">中等</small></div><div class="xs">10–14 点外出戴帽<br/>建议 SPF30 防晒</div>
+      <div class="xb"><div class="seg5">${uvc.map((c, i) => `<i class="${i === 1 ? 'on' : ''}" style="background:${c};color:${c}"></i>`).join('')}</div></div>`)}
+    ${xcard('pollen', 'green', '花粉过敏', 0, `<div class="xv">较低<small style="color:var(--ok)">2 / 5</small></div>
+      <div class="xb">${[['桦树', 12, '#8CCB6E'], ['禾草', 28, '#E2C14A'], ['豚草', 6, '#9EC9E8']].map(([k, v, c]) => `<div class="mrow"><span>${k}</span><div class="tr"><i style="width:${v * 2}%;background:${c}"></i></div><em class="num">${v}</em></div>`).join('')}</div>`)}
+    ${xcard('wind', 'teal', '风力风向', 1, `<div style="display:flex;gap:12px;align-items:center;margin-top:-2px">
+        <svg width="70" height="70" viewBox="0 0 70 70"><circle cx="35" cy="35" r="31" fill="var(--soft)" stroke="var(--track)"/>
+        ${Array.from({ length: 24 }, (_, i) => { const a = i * 15 * Math.PI / 180, r1 = i % 6 ? 28 : 25; return `<line x1="${35 + Math.sin(a) * r1}" y1="${35 - Math.cos(a) * r1}" x2="${35 + Math.sin(a) * 30}" y2="${35 - Math.cos(a) * 30}" stroke="var(--ink3)" stroke-width="${i % 6 ? .8 : 1.5}"/>`; }).join('')}
+        <text x="35" y="15" font-size="8" text-anchor="middle" fill="var(--ink2)" font-family="HOS">北</text>
+        <g transform="rotate(315 35 35)"><path d="M35 14l5 21h-10z" fill="#1F8F7E"/><path d="M35 56l5-21h-10z" fill="var(--ink3)" opacity=".5"/></g><circle cx="35" cy="35" r="3" fill="var(--card)" stroke="#1F8F7E" stroke-width="1.5"/></svg>
+        <div><div class="xv num" style="font-size:24px">3<small style="color:var(--ink2);font-weight:400">级</small></div><div class="xs">东南风 · 微风<br/>阵风 5 级</div></div></div>
+      <div class="xb xs num" style="color:var(--ink3)">12 km/h · 阵风 29 km/h</div>`)}
+    ${xcard('eye', 'blue', '能见度雾况', 1, `<div class="xv num">12<small style="color:var(--ink2);font-weight:400">km</small></div><div class="xs">良好 · 远山清晰可见</div>
+      <div class="xb"><svg width="100%" height="34" viewBox="0 0 190 34" preserveAspectRatio="none"><path d="M0 30L30 14 55 24 85 8 120 22 150 12 190 26V34H0z" fill="var(--rain)" opacity=".18"/><path d="M0 32L40 22 80 28 120 18 160 26 190 22V34H0z" fill="var(--rain)" opacity=".28"/>
+      ${[0, 1, 2, 3, 4].map(i => `<circle cx="${170 - i * 9}" cy="5" r="2.6" fill="var(--rain)" opacity="${i < 4 ? 1 : .25}"/>`).join('')}</svg></div>`)}
+  </div>
+  <div class="grp-h" style="margin-top:6px">${hdH}生活指数<span>4 / 4 已开启</span></div><div class="quad">
+    ${xcard('shirt', 'violet', '穿衣指数', 1, `<div class="xv">薄外套</div><div class="xs">体感 28° → 傍晚 21°<br/>早晚温差大，带件外套</div>
+      <div class="xb"><div class="seg5">${['#7FB6F0', '#8FD0C0', '#B9D98A', '#F5D048', '#F5A04A', '#E5603D'].map((c, i) => `<i class="${i === 3 ? 'on' : ''}" style="background:${c};color:${c}"></i>`).join('')}</div></div>`)}
+    ${xcard('car', 'blue', '洗车指数', 1, `<div class="xv" style="color:var(--bad)">不宜</div><div class="xs">未来 24h 降水概率 75%</div>
+      <div class="xb bars rain" style="height:30px">${[5, 10, 30, 70, 75, 40, 20, 10, 60, 55, 20, 10].map((v, i) => `<i class="${v >= 50 ? 'on' : ''}" style="height:${Math.max(8, v)}%"></i>`).join('')}</div>`)}
+    ${xcard('hanger', 'warm', '晾晒指数', 1, `<div class="xv">一般</div><div class="xs">上午可晾，15 点前收</div>
+      <div class="xb">${[['湿度', 76, 'var(--rain)'], ['云量', 60, '#9AA9C0'], ['日照', 35, '#F5B544']].map(([k, v, c]) => `<div class="mrow"><span>${k}</span><div class="tr"><i style="width:${v}%;background:${c}"></i></div><em class="num">${v}</em></div>`).join('')}</div>`)}
+    ${xcard('thermo', 'rose', '感冒指数', 1, `<div class="xv">较易发</div><div class="xs">昼夜温差 8° · 湿度偏高<br/>注意添衣、多喝水</div>
+      <div class="xb"><div class="seg5">${['#8FD0C0', '#F5D048', '#F59A3C', '#E5533D'].map((c, i) => `<i class="${i === 2 ? 'on' : ''}" style="background:${c};color:${c}"></i>`).join('')}</div></div>`)}
+  </div>`;
+}
+function moonSvg(s, ill) {
+  return `<svg width="${s}" height="${s}" viewBox="0 0 60 60"><defs><radialGradient id="mg${uid}" cx=".38" cy=".35" r=".75"><stop offset="0" stop-color="#FFFBEA"/><stop offset="1" stop-color="#E9CF8A"/></radialGradient></defs>
+    <circle cx="30" cy="30" r="27" fill="#F4D28A" opacity=".14"/><circle cx="30" cy="30" r="20" fill="url(#mg${uid++})"/>
+    <circle cx="24" cy="25" r="3.5" fill="#C9AE6A" opacity=".35"/><circle cx="35" cy="34" r="5" fill="#C9AE6A" opacity=".28"/><circle cx="33" cy="22" r="2" fill="#C9AE6A" opacity=".3"/>
+    <path d="M50 30a20 20 0 0 1-20 20 ${(1 - ill) * 200} 20 0 0 0 0-40 20 20 0 0 1 20 20z" fill="rgba(20,24,60,.35)"/></svg>`;
+}
+function quadClimate() {
+  const hist = [21.4, 20.1, 22.8, 19.6, 21.0, 23.1, 20.5, 22.2, 21.9, 23.8, 26];
+  const hmin = 18, hmax = 27;
+  const pres = [1011.2, 1011.0, 1010.6, 1010.4, 1010.5, 1010.1, 1009.6, 1009.2, 1008.8, 1008.4, 1008.1];
+  const pp = pres.map((v, i) => [i * 19, 40 - (v - 1007.5) / 4.2 * 34]);
+  return `<div class="grp-h">${hdH}日月气候<span>4 / 4 已开启</span></div><div class="quad">
+    ${xcard('moon', 'violet', '月相 · 日照', 1, `<div style="display:flex;gap:10px;align-items:center">${moonSvg(52, .99)}<div><div class="xv" style="font-size:20px">既望</div><div class="xs num">照明 99% · 月龄 15.6</div></div></div>
+      <div class="xb"><div class="mrow num" style="justify-content:space-between;margin:0 0 5px"><span style="width:auto">06:21</span><span style="width:auto">16:58</span></div>
+      <div style="height:6px;border-radius:3px;background:var(--track);position:relative"><i style="position:absolute;left:0;width:76%;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#FFD27A,#F0A23A)"></i><b style="position:absolute;left:76%;top:50%;width:12px;height:12px;margin:-6px;border-radius:50%;background:#FFE08A;box-shadow:0 0 0 3px rgba(255,210,122,.35)"></b></div></div>`)}
+    ${xcard('chart', 'green', '历史今天', 0, `<div class="xv num">+3.2°<small style="color:var(--bad)">偏暖</small></div><div class="xs">比近 10 年同日均温高</div>
+      <div class="xb bars">${hist.map((v, i) => `<i class="${i === 10 ? 'hl' : ''}" style="height:${(v - hmin) / (hmax - hmin) * 100}%"></i>`).join('')}</div>`)}
+    ${xcard('drop', 'blue', '降水统计', 1, `<div style="display:flex;gap:16px"><div><div class="xv num" style="font-size:22px">12.4<small style="color:var(--ink2);font-weight:400;margin-left:2px">mm</small></div><div class="xs">本周</div></div>
+        <div><div class="xv num" style="font-size:22px">48<small style="color:var(--ink2);font-weight:400;margin-left:2px">mm</small></div><div class="xs">本月 · 偏少 18%</div></div></div>
+      <div class="xb bars rain">${[0, 2.1, 0, 0, 6.8, 3.5, 0].map(v => `<i class="on" style="height:${Math.max(4, v / 7 * 100)}%;${v ? '' : 'background:var(--track)'}"></i>`).join('')}</div>`)}
+    ${xcard('gauge', 'teal', '气压趋势', 1, `<div class="xv num">1008<small style="color:var(--ink2);font-weight:400">hPa</small></div><div class="xs num" style="color:#1F8F7E">↓ 2.1 / 3h · 降雨信号</div>
+      <div class="xb"><svg width="100%" height="44" viewBox="0 0 190 44" preserveAspectRatio="none"><defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1FB59E" stop-opacity=".3"/><stop offset="1" stop-color="#1FB59E" stop-opacity="0"/></linearGradient></defs>
+      <path d="${smooth(pp)} L190,44 L0,44Z" fill="url(#pg)"/><path d="${smooth(pp)}" fill="none" stroke="#1FB59E" stroke-width="2"/><circle cx="190" cy="${pp[10][1]}" r="3.5" fill="#1FB59E" stroke="#fff" stroke-width="1.5"/></svg></div>`)}
+  </div>`;
+}
+function quadPlay() {
+  return `<div class="grp-h" style="margin-top:6px">${hdH}玩法效率<span>4 / 4 已开启</span></div><div class="quad">
+    ${xcard('city', 'teal', '多城市关注', 0, `<div class="num">${[['慈溪', '浙江', 'rain', 26, 1], ['上海', '', 'cloud', 24], ['北京', '', 'sun', 9], ['九龍', '香港', 'partly', 27]].map(([c, s, ic, t, on]) => `<div class="city ${on ? 'on' : ''}">${icon(ic, 20, NIGHT)}<b>${c}${s ? `<small>${s}</small>` : ''}</b><em>${t}°</em></div>`).join('')}</div>`)}
+    ${xcard('radar', 'green', '降水雷达', 1, `<div class="radar">
+        <svg width="100%" height="100%" viewBox="0 0 190 96" preserveAspectRatio="none" style="position:absolute;inset:0"><path d="M0 60C30 50 40 70 70 62s40-30 70-24 30 10 50 4V96H0z" fill="rgba(255,255,255,.05)"/>
+        <ellipse cx="62" cy="38" rx="26" ry="14" fill="#5CCB8A" opacity=".45"/><ellipse cx="66" cy="40" rx="13" ry="7" fill="#F5D048" opacity=".7"/><ellipse cx="68" cy="40" rx="5" ry="3" fill="#F59A3C"/>
+        <ellipse cx="140" cy="66" rx="20" ry="10" fill="#5CCB8A" opacity=".35"/></svg>
+        <div class="ring" style="width:50px;height:50px"></div><div class="ring" style="width:100px;height:100px"></div><div class="sweep"></div><div class="me"></div></div>
+      <div class="rtl"><span class="pl"><svg viewBox="0 0 24 24" width="10" height="10" fill="#fff">${L.play}</svg></span><div class="tr"><i></i><b></b></div><small class="num">+20′</small></div>`)}
+    ${xcard('bell', 'warm', '天气提醒', 0, `${[['降雨概率 ≥ 60%', 1], ['最高温 ≥ 35°', 0], ['紫外线 ≥ 6', 1], ['风力 ≥ 6 级', 1]].map(([t, on]) => `<div class="rule"><span>${t}</span><span class="sw ${on ? 'on' : ''}"></span></div>`).join('')}
+      <div class="xb xs" style="color:var(--ink3)">+ 添加规则</div>`)}
+    ${xcard('image', 'rose', '卡片分享', 0, `<div class="sharep"><b class="num">26°</b><small>慈溪 · 多云 · 雨将至</small><i>云上晴雨</i></div>
+      <div class="sbtn"><span class="btn pri">保存 PNG</span><span class="btn ln">复制</span></div>`)}
+  </div>`;
+}
+
+/* ====================== BUILD ====================== */
+document.getElementById('c1').innerHTML = globeCard() + duo();
+document.getElementById('c1b').innerHTML = states();
+document.getElementById('c2').innerHTML = almanac();
+NIGHT = true; document.getElementById('c3').innerHTML = settings(); NIGHT = false;
+document.getElementById('q1').innerHTML = quadReal();
+document.getElementById('q2').innerHTML = quadClimate() + quadPlay();
+NIGHT = true; document.getElementById('q3').innerHTML = quadClimate() + quadPlay(); NIGHT = false;
+document.getElementById('notes').innerHTML = [
+  ['紫外线 · 光线扫过', '高光带 8s 斜扫一次，指数 ≥ 6 时加快到 4s'],
+  ['花粉 · 微粒漂浮', '6–10 颗淡色微粒缓慢上浮，浓度越高越多'],
+  ['风向 · 指针摆动', '指针按阵风 ±6° 阻尼摆动，罗盘不转'],
+  ['雾况 · 雾层平移', '两层雾带 40s / 70s 横向循环'],
+  ['雷达 · 真扫掠', '扫描扇区 4s 一周，回波帧 0.6s 轮播，可拖时间轴'],
+  ['月相 · 星辉', '月面外圈光晕 5s 呼吸；夜间卡片背景浮现星点'],
+  ['降水统计 · 水波微漾', '柱顶带微弱高光起伏，悬停浮出每日毫米数'],
+  ['统一约束', '只用 transform / opacity；滚动时暂停；设置「动效：关闭」全部静止'],
+].map(([a, b]) => `<div><b>${a}</b>${b}</div>`).join('');
+
+const q = new URLSearchParams(location.search).get('sheet');
+if (q === '3') document.body.classList.add('s3');
+if (q === '4') document.body.classList.add('s4');
+document.fonts.ready.then(() => { const cv = document.getElementById('globe'); if (cv && getComputedStyle(document.getElementById('sheet3')).display !== 'none') renderGlobe(cv, 412, 250); });
+</script>
+</body>
+</html>

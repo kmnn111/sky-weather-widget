@@ -7,20 +7,20 @@ const FX = (() => {
   let particles = [], mode = 'clear', night = false;
   let flash = 0, nextFlash = 0, rafId = null;
 
-  /* ---------- 天空渐变（吉卜力水彩色） ---------- */
+  /* ---------- 天空渐变（天光 Living Sky 水彩色） ---------- */
   const PHASES = {
-    night: ['#202a52', '#3a4a7d', '#5b6ba5'],
-    dawn: ['#5b4a8a', '#e2789a', '#ffce8a'],
-    day: ['#5aa8dd', '#8fcbe9', '#d8eefb'],
-    dusk: ['#4b3a7d', '#c76d9f', '#ff9a5c'],
-    evening: ['#2b3364', '#5d4e93', '#a06a9c']
+    night: ['#0e1230', '#1c2152', '#262b60'],
+    dawn: ['#4e4884', '#d9889a', '#ffd49c'],
+    day: ['#7db8ec', '#a9d2f3', '#e8f1f6'],
+    dusk: ['#473c7a', '#c97898', '#ffad72'],
+    evening: ['#1c2152', '#393874', '#6d578c']
   };
   const MOOD = {
-    rain: ['rgba(72,88,120,0.72)', 'rgba(96,112,142,0.6)', 'rgba(120,136,166,0.5)'],
-    thunder: ['rgba(48,56,84,0.85)', 'rgba(72,80,112,0.75)', 'rgba(96,104,136,0.6)'],
-    snow: ['rgba(150,170,196,0.5)', 'rgba(180,198,218,0.42)', 'rgba(226,236,246,0.4)'],
-    fog: ['rgba(150,158,172,0.6)', 'rgba(178,186,198,0.5)', 'rgba(206,212,222,0.42)'],
-    cloudy: ['rgba(120,136,168,0.32)', 'rgba(150,166,194,0.26)', 'rgba(186,200,222,0.2)']
+    rain: ['rgba(58,76,112,0.58)', 'rgba(84,104,140,0.48)', 'rgba(116,136,168,0.38)'],
+    thunder: ['rgba(38,44,78,0.78)', 'rgba(58,66,104,0.68)', 'rgba(86,96,132,0.52)'],
+    snow: ['rgba(156,178,204,0.46)', 'rgba(192,208,226,0.38)', 'rgba(232,240,248,0.34)'],
+    fog: ['rgba(156,166,180,0.54)', 'rgba(186,194,206,0.44)', 'rgba(216,222,230,0.36)'],
+    cloudy: ['rgba(128,148,178,0.22)', 'rgba(164,180,204,0.16)', 'rgba(202,214,230,0.12)']
   };
 
   function phaseOf(h) {
@@ -51,13 +51,13 @@ const FX = (() => {
     if (!a || !b) return;
     const [show, hide] = skyToggle ? [a, b] : [b, a];
     show.style.backgroundImage = overlay === 'none' ? grad : `${overlay}, ${grad}`;
-    // 白天只做 0.3 的极轻氛围染色（保持玻璃透明感）；夜晚加深染色，压出星空暗色调
-    show.style.opacity = night ? '0.55' : '0.3';
+    // 白天轻染色保持奶油通透感；夜晚深靛星空
+    show.style.opacity = night ? '0.78' : '0.42';
     hide.style.opacity = '0';
     skyToggle = !skyToggle;
 
     const stars = document.getElementById('stars');
-    if (stars) stars.style.opacity = night && (group === 'clear' || group === 'cloudy') ? '0.9' : '0';
+    if (stars) stars.style.opacity = night ? (group === 'clear' || group === 'cloudy' ? '0.92' : '0.45') : '0';
   }
 
   /* ---------- 太阳 / 月亮轨迹 ----------

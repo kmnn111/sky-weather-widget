@@ -490,13 +490,19 @@
       const holTag = hol ? `<i class="ht ${hol.isWork ? 'work' : 'rest'}">${hol.isWork ? '班' : '休'}</i>` : '';
       const left = (mins[i] - weekMin) / span * 100;
       const width = Math.max(12, (maxs[i] - mins[i]) / span * 100);
+      let nowDot = '';
+      if (i === 0 && w.current && Number.isFinite(Number(w.current.temperature_2m))) {
+        const curT = Number(w.current.temperature_2m);
+        const curPct = Math.max(left, Math.min(left + width, (curT - weekMin) / span * 100));
+        nowDot = `<b class="d-now-dot" style="left:${curPct.toFixed(1)}%" title="当前温度"></b>`;
+      }
       html += `<div class="d-row">
         <div class="d-label">${label}<small>${sub}${holTag}</small></div>
         <div class="d-icon">${Icons.svg(info.icon, 30)}</div>
         <div class="d-text">${esc(info.text)}</div>
         <div class="d-temp">
           <span class="d-low">${SkyUnits.temp(mins[i])}</span>
-          <span class="d-bar"><i style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i></span>
+          <span class="d-bar"><i style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i>${nowDot}</span>
           <span class="d-high">${SkyUnits.temp(maxs[i])}</span>
         </div>
       </div>`;
@@ -748,13 +754,52 @@
     const inf = Almanac.dayInfo(now);
     $('pillDate').textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${inf.week.replace('星期', '周')}`;
     const lunar = `农历${inf.lunarMonth}${inf.lunarDay}`;
+    const pillEl = $('pill');
     const w = state.data && state.data.weather;
-    if (!w) { $('pillSub').textContent = lunar; return; }
+    if (!w) {
+      $('pillSub').textContent = lunar;
+      if (pillEl) pillEl.classList.remove('pill-rain', 'pill-warn');
+      return;
+    }
     const c = w.current;
-    const info = Weather.codeInfo(c.weather_code, computeIsDay(w, new Date()));
+    const isDay = computeIsDay(w, new Date());
+    const info = Weather.codeInfo(c.weather_code, isDay);
     $('pillTemp').textContent = Math.round(SkyUnits.num(c.temperature_2m));
-    $('pillIcon').innerHTML = Icons.svg(info.icon, 30); // 内置光芒旋转/雨滴下落/云朵浮动动画
-    $('pillSub').textContent = `${lunar} · ${info.text}`;
+    $('pillIcon').innerHTML = Icons.svg(info.icon, 32); // 内置光芒旋转/雨滴下落/云朵浮动动画
+
+    // 预警 / 即将降水状态：小窗底边亮起对应流光，副行优先提示关键天气
+    const alerts = (state.data && state.data.cnAlerts) || [];
+    const hasWarn = alerts.length > 0;
+    let rainTip = '';
+    const m = w.minutely_15;
+    if (m && m.time && m.precipitation) {
+      const nowStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(Math.floor(now.getMinutes() / 15) * 15)}`;
+      let idx = m.time.indexOf(nowStr);
+      if (idx < 0) idx = m.time.findIndex(t => t >= nowStr);
+      if (idx >= 0) {
+        const slots = m.precipitation.slice(idx, idx + 8).map(v => Number(v) || 0);
+        const firstWet = slots.findIndex(v => v > 0.05);
+        if (firstWet > 0) rainTip = `☂ 约 ${firstWet * 15} 分钟后有雨`;
+        else if (firstWet === 0) {
+          const stop = slots.findIndex((v, i) => i > 0 && v <= 0.05);
+          rainTip = stop > 0 ? `☂ 雨约 ${stop * 15} 分钟后停` : '☂ 正在降雨';
+        }
+      }
+    }
+    const isRainNow = info.group === 'rain' || info.group === 'thunder' || !!rainTip;
+    if (pillEl) {
+      pillEl.classList.toggle('pill-warn', hasWarn);
+      pillEl.classList.toggle('pill-rain', !hasWarn && isRainNow);
+    }
+    if (hasWarn) {
+      const a0 = alerts[0];
+      const t = a0.type ? `${a0.type}${a0.level || ''}预警` : `${a0.level || ''}官方预警`;
+      $('pillSub').textContent = `⚠ ${t}`;
+    } else if (rainTip) {
+      $('pillSub').textContent = rainTip;
+    } else {
+      $('pillSub').textContent = `${lunar} · ${info.text}`;
+    }
   }
   function applyDockState(s) {
     document.body.classList.toggle('docked', !!s.docked);
