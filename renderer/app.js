@@ -146,23 +146,26 @@
     const c = w.current, d = w.daily;
     const info = Weather.codeInfo(c.weather_code, computeIsDay(w, new Date()));
     $('tempNow').textContent = Math.round(SkyUnits.num(c.temperature_2m));
-    $('nowIcon').innerHTML = `<span class="big-icon">${Icons.svg(info.icon, 58)}</span>`;
+    $('nowIcon').innerHTML = `<span class="big-icon">${Icons.svg(info.icon, 28)}</span>`;
     $('condText').textContent = info.text;
-    $('tempRange').textContent = `今日 ${SkyUnits.temp(d.temperature_2m_max[0])} / ${SkyUnits.temp(d.temperature_2m_min[0])}`;
+    const sunInfo = computeIsDay(w, new Date())
+      ? (d.sunset[0] ? ` · 日落 ${d.sunset[0].slice(11)}` : '')
+      : (d.sunrise[0] ? ` · 日出 ${d.sunrise[0].slice(11)}` : '');
+    $('tempRange').textContent = `最高 ${SkyUnits.temp(d.temperature_2m_max[0])} / 最低 ${SkyUnits.temp(d.temperature_2m_min[0])}${sunInfo}`;
 
     const chips = [
       ['体感', SkyUnits.temp(c.apparent_temperature)],
       ['湿度', `${c.relative_humidity_2m}%`],
-      ['风', `${Weather.windDir(c.wind_speed_10m ? c.wind_direction_10m : 0)} ${SkyUnits.windText(c.wind_speed_10m)}`],
-      ['气压', `${Math.round(c.pressure_msl)}hPa`],
-      ['日出', (d.sunrise[0] || '').slice(11)],
-      ['日落', (d.sunset[0] || '').slice(11)]
+      [Weather.windDir(c.wind_speed_10m ? c.wind_direction_10m : 0), SkyUnits.windText(c.wind_speed_10m)],
+      ['气压', `${Math.round(c.pressure_msl)} hPa`]
     ];
-    // 朝晚霞概率：取「下一次」日出/日落所在小时的低/中/高云量推算（不新增栏目，融进 chips）
+    // 朝晚霞概率：作为实况条下方一行轻巧副条展示（不破坏 4 栏对称，同时保留朝/晚霞信息）
     const glow = computeGlow(w, new Date());
-    if (glow.dawn) chips.push(['朝霞', glow.dawn.label]);
-    if (glow.dusk) chips.push(['晚霞', glow.dusk.label]);
-    $('statRow').innerHTML = chips.map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('');
+    const glowParts = [];
+    if (glow.dawn) glowParts.push(`<span>朝霞 <b>${esc(glow.dawn.label)}</b></span>`);
+    if (glow.dusk) glowParts.push(`<span>晚霞 <b>${esc(glow.dusk.label)}</b></span>`);
+    const glowRow = glowParts.length ? `<div class="ls-glow-row">${glowParts.join('<em>·</em>')}</div>` : '';
+    $('statRow').innerHTML = `<div class="ls-stat-grid">${chips.map(([k, v]) => `<div class="ls-stat"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>${glowRow}`;
 
     // 提示条：官方预警（中国天气网 alarmDZ，气象台发布）置顶 + 自算提示（温差/风/UV 等）补充
     const official = (state.data && state.data.cnAlerts) || [];
@@ -533,16 +536,39 @@
       return 98;
     };
     const fill = $('aqiBarFill');
-    const trackW = (fill.parentElement && fill.parentElement.clientWidth) || 240;
-    fill.style.transform = `translateX(${(trackW * piecewise(aq.aqi) / 100).toFixed(1)}px)`;
+    const pct = piecewise(aq.aqi);
+    const trackW = (fill.parentElement && fill.parentElement.clientWidth) || 180;
+    fill.style.transform = `translateX(${(trackW * pct / 100).toFixed(1)}px)`;
+
+    // 半圆弧 AQI 仪表盘（天光设计）
+    const aqiMain = $('aqiNum') && $('aqiNum').parentElement;
+    if (aqiMain) {
+      let gEl = aqiMain.querySelector('.aqi-arc-svg');
+      if (!gEl) {
+        gEl = document.createElement('div');
+        gEl.className = 'aqi-arc-svg';
+        aqiMain.insertBefore(gEl, aqiMain.firstChild);
+      }
+      const rad = Math.PI * (1 - pct / 100);
+      const cx = 70, cy = 68, R = 54;
+      const px = (cx + R * Math.cos(rad)).toFixed(1);
+      const py = (cy - R * Math.sin(rad)).toFixed(1);
+      const dotCol = aq.aqi <= 50 ? '#5ccb8a' : aq.aqi <= 100 ? '#f5d048' : aq.aqi <= 150 ? '#f59a3c' : aq.aqi <= 200 ? '#e5533d' : '#8e4fb8';
+      gEl.innerHTML = `<svg width="140" height="80" viewBox="0 0 140 80" aria-hidden="true">
+        <defs><linearGradient id="lsAqiGrad" x1="0" x2="1"><stop offset="0" stop-color="#5ccb8a"/><stop offset=".3" stop-color="#f5d048"/><stop offset=".55" stop-color="#f59a3c"/><stop offset=".78" stop-color="#e5533d"/><stop offset="1" stop-color="#8e4fb8"/></linearGradient></defs>
+        <path d="M16 68A54 54 0 0 1 124 68" fill="none" stroke="var(--ls-track)" stroke-width="8.5" stroke-linecap="round"/>
+        <path d="M16 68A54 54 0 0 1 124 68" fill="none" stroke="url(#lsAqiGrad)" stroke-width="8.5" stroke-linecap="round" opacity=".92"/>
+        <circle cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="${dotCol}" stroke-width="3"/>
+      </svg>`;
+    }
 
     const order = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'];
     $('aqiGrid').innerHTML = order.map(k => {
       const s = aq.sub[k];
       if (!s) return '';
-      const val = k === 'co' ? s.value.toFixed(2) : Math.round(s.value);
+      const val = k === 'co' ? s.value.toFixed(1) : Math.round(s.value);
       return `<div class="aqi-cell"><span>${s.name}</span><b>${val}</b></div>`;
-    }).join('') + `<div class="aqi-cell" style="grid-column:1/3;opacity:.6"><span>单位 μg/m³（CO 为 mg/m³）</span></div>`;
+    }).join('');
   }
 
   /* ---------- 模块显隐（设置面板「显示模块」；隐藏即 display:none，零渲染开销） ---------- */

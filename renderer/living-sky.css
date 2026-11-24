@@ -1,14 +1,16 @@
 /* ============================================================
-   云上晴雨 · 天光（Living Sky）视觉与动效升级主题
-   叠加于 styles.css 之上：不破坏任何 DOM ID / 交互 / 自检断言
+   云上晴雨 · 天光（Living Sky）完整视觉与布局升级主题
+   对齐 design/living-sky 设计稿：
+   开放式天光首屏 + 4 栏磨砂实况条 + 独立降水卡 + 宽幅昼夜地球 +
+   半圆弧 AQI 仪表盘 + 16 张统一玻璃四联卡 + iOS 开关设置面板
    ============================================================ */
 
 :root {
   --ink: #1d2938;
-  --ink-soft: rgba(29, 41, 56, 0.60);
-  --ink-faint: rgba(29, 41, 56, 0.40);
+  --ink-soft: rgba(29, 41, 56, 0.62);
+  --ink-faint: rgba(29, 41, 56, 0.42);
   --paper: rgba(255, 255, 255, 0.72);
-  --paper-strong: rgba(255, 255, 255, 0.90);
+  --paper-strong: rgba(255, 255, 255, 0.92);
   --sun: #f0a23a;
   --sun-deep: #e68e22;
   --sky: #7db8ec;
@@ -17,8 +19,8 @@
   --green: #2f9a5e;
   --blue: #3b8ce0;
   --radius: 22px;
-  --shadow: 0 10px 28px -10px rgba(45, 72, 112, 0.20);
-  --ls-border: rgba(255, 255, 255, 0.86);
+  --shadow: 0 10px 28px -10px rgba(45, 72, 112, 0.18);
+  --ls-border: rgba(255, 255, 255, 0.88);
   --ls-track: rgba(30, 50, 80, 0.08);
   --ls-soft: rgba(30, 50, 80, 0.045);
 }
@@ -28,72 +30,75 @@ body.night {
   --ink-soft: rgba(226, 232, 255, 0.66);
   --ink-faint: rgba(226, 232, 255, 0.42);
   --paper: rgba(36, 42, 86, 0.58);
-  --paper-strong: rgba(24, 29, 64, 0.92);
+  --paper-strong: rgba(24, 29, 64, 0.94);
   --sun: #f4d28a;
   --sun-deep: #e8bc62;
   --red: #ff8c70;
   --green: #8ee3b4;
   --blue: #7db7ff;
   --shadow: 0 12px 32px -12px rgba(4, 8, 28, 0.55);
-  --ls-border: rgba(255, 255, 255, 0.10);
+  --ls-border: rgba(255, 255, 255, 0.09);
   --ls-track: rgba(255, 255, 255, 0.09);
   --ls-soft: rgba(255, 255, 255, 0.055);
 }
 
-.clock, .now-temp, .pill-time, .pill-temp, .h-temp, .d-low, .d-high, .aqi-num, .aqi-cell b, .x-val {
+.clock, .now-temp, .pill-time, .pill-temp, .h-temp, .d-low, .d-high, .aqi-num, .aqi-cell b, .x-val, .g-v {
   font-variant-numeric: tabular-nums;
 }
 
-/* ================= 窗口外框与天空氛围层 ================= */
+/* ================= 窗口外框与开放天空画布 ================= */
 #frame {
   border-radius: 30px;
 }
 #frame::after {
   border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.58);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 body.night #frame::after {
-  border-color: rgba(255, 255, 255, 0.10);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 #sky {
   clip-path: inset(0 round 30px);
-  background: linear-gradient(180deg, #ddebf5 0%, #eef2f2 46%, #f5f1ea 100%);
+  background:
+    radial-gradient(240px 200px at 80% 10%, rgba(255, 226, 160, 0.85), rgba(255, 214, 140, 0.28) 45%, rgba(255, 214, 140, 0) 70%),
+    linear-gradient(180deg, #8cc3f0 0%, #badbf5 22%, #e6eff5 44%, #f4f1ea 100%);
 }
 body.docked:not(.expanded) #sky {
   clip-path: inset(0 calc(50% - 124px) calc(100% - 64px) round 32px);
 }
 body.night #sky {
-  background: linear-gradient(180deg, #0e1230 0%, #1c2152 38%, #14172f 100%);
+  background:
+    radial-gradient(200px 170px at 80% 10%, rgba(255, 232, 180, 0.30), rgba(255, 232, 180, 0.06) 50%, rgba(255, 232, 180, 0) 72%),
+    linear-gradient(180deg, #0e1230 0%, #1c2152 26%, #24285a 46%, #14172f 100%);
 }
 
-/* 太阳呼吸光晕 */
 #sun {
-  width: 82px; height: 82px;
+  width: 72px; height: 72px;
   background: radial-gradient(circle at 38% 36%, #fff9e0 0%, #ffe08a 44%, #ffb246 100%);
-  box-shadow: 0 0 46px 18px rgba(255, 206, 112, 0.56), 0 0 120px 52px rgba(255, 220, 150, 0.28);
+  box-shadow: 0 0 42px 16px rgba(255, 206, 112, 0.56), 0 0 110px 46px rgba(255, 220, 150, 0.28);
   animation: lsSunBreathe 6s ease-in-out infinite;
 }
 @keyframes lsSunBreathe {
-  0%, 100% { box-shadow: 0 0 46px 18px rgba(255, 206, 112, 0.56), 0 0 120px 52px rgba(255, 220, 150, 0.28); }
-  50%      { box-shadow: 0 0 58px 24px rgba(255, 206, 112, 0.66), 0 0 140px 62px rgba(255, 220, 150, 0.34); }
+  0%, 100% { box-shadow: 0 0 42px 16px rgba(255, 206, 112, 0.56), 0 0 110px 46px rgba(255, 220, 150, 0.28); }
+  50%      { box-shadow: 0 0 54px 22px rgba(255, 206, 112, 0.66), 0 0 132px 58px rgba(255, 220, 150, 0.35); }
 }
 
 #moon {
-  width: 66px; height: 66px;
+  width: 58px; height: 58px;
   background:
-    radial-gradient(circle at 32% 30%, rgba(206, 174, 108, 0.36) 0 6px, transparent 7px),
-    radial-gradient(circle at 60% 56%, rgba(206, 174, 108, 0.30) 0 8px, transparent 9px),
+    radial-gradient(circle at 32% 30%, rgba(206, 174, 108, 0.36) 0 5px, transparent 6px),
+    radial-gradient(circle at 60% 56%, rgba(206, 174, 108, 0.30) 0 7px, transparent 8px),
     radial-gradient(circle at 38% 34%, #fffceb, #f6e0a0 58%, #e5c36c);
-  box-shadow: 0 0 36px 12px rgba(255, 232, 168, 0.34), 0 0 96px 38px rgba(255, 232, 168, 0.14);
+  box-shadow: 0 0 32px 10px rgba(255, 232, 168, 0.34), 0 0 88px 34px rgba(255, 232, 168, 0.14);
 }
 
-/* 远山与飞鸟（吉卜力天际线层次，仅作背景氛围，不遮挡内容） */
+/* 远山与飞鸟（置于开放天光首屏底部天际线） */
 .sky-birds {
-  position: absolute; right: 92px; top: 82px;
-  stroke: rgba(45, 72, 102, 0.42); stroke-width: 1.35; stroke-linecap: round;
+  position: absolute; right: 118px; top: 82px;
+  stroke: rgba(45, 72, 102, 0.46); stroke-width: 1.35; stroke-linecap: round;
   pointer-events: none; transition: opacity 1.2s ease;
   animation: lsBirdFloat 9s ease-in-out infinite alternate;
 }
@@ -104,24 +109,24 @@ body.night #sky {
 body.night .sky-birds { opacity: 0; }
 
 .sky-hills {
-  position: absolute; left: 0; right: 0; top: 210px; height: 120px; width: 100%;
-  pointer-events: none; opacity: 0.72; transition: opacity 1.2s ease;
+  position: absolute; left: 0; right: 0; top: 222px; height: 112px; width: 100%;
+  pointer-events: none; opacity: 0.85; transition: opacity 1.2s ease;
 }
-.sky-hills .hill-far  { fill: #b9d7c6; opacity: 0.72; transition: fill 1.2s ease; }
-.sky-hills .hill-mid  { fill: #a5cbb3; opacity: 0.78; transition: fill 1.2s ease; }
-.sky-hills .hill-near { fill: #eef2f2; opacity: 0.92; transition: fill 1.2s ease; }
-body.night .sky-hills { opacity: 0.85; }
-body.night .sky-hills .hill-far  { fill: #262c62; opacity: 0.85; }
-body.night .sky-hills .hill-mid  { fill: #1f2456; opacity: 0.92; }
-body.night .sky-hills .hill-near { fill: #181c42; opacity: 0.95; }
+.sky-hills .hill-far  { fill: #b9d7c6; opacity: 0.78; transition: fill 1.2s ease; }
+.sky-hills .hill-mid  { fill: #a5cbb3; opacity: 0.84; transition: fill 1.2s ease; }
+.sky-hills .hill-near { fill: #e6eff5; opacity: 0.96; transition: fill 1.2s ease; }
+body.night .sky-hills { opacity: 0.9; }
+body.night .sky-hills .hill-far  { fill: #262c62; opacity: 0.88; }
+body.night .sky-hills .hill-mid  { fill: #1f2456; opacity: 0.94; }
+body.night .sky-hills .hill-near { fill: #212656; opacity: 0.96; }
 
 /* ================= 吸顶温度小窗（248 × 64 全圆胶囊 + 天窗圆 + 流光） ================= */
 #pill {
   border-radius: 32px;
   padding: 0 16px 0 8px;
   gap: 9px;
-  background: linear-gradient(105deg, rgba(255, 251, 242, 0.94), rgba(228, 240, 251, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.92);
+  background: linear-gradient(105deg, rgba(255, 251, 242, 0.95), rgba(228, 240, 251, 0.93));
+  border: 1px solid rgba(255, 255, 255, 0.94);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
     inset 0 -1px 0 rgba(120, 150, 190, 0.16),
@@ -129,7 +134,7 @@ body.night .sky-hills .hill-near { fill: #181c42; opacity: 0.95; }
   overflow: hidden;
 }
 body.night #pill {
-  background: linear-gradient(105deg, rgba(40, 46, 98, 0.95), rgba(24, 28, 62, 0.95));
+  background: linear-gradient(105deg, rgba(40, 46, 98, 0.96), rgba(24, 28, 62, 0.96));
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -137,7 +142,6 @@ body.night #pill {
     0 10px 26px -6px rgba(5, 8, 30, 0.55);
 }
 
-/* 左侧天窗圆：缩小版天空 */
 #pill .pill-grip {
   width: 46px; height: 46px;
   border-radius: 50%;
@@ -167,47 +171,22 @@ body.night #pill.pill-rain .pill-grip {
   background: radial-gradient(circle at 50% 28%, #ffc766, #e2701f);
   box-shadow: inset 0 0 0 1px rgba(255, 240, 200, 0.45);
 }
-#pill .pill-ico {
-  width: 34px; height: 34px;
-  display: grid; place-items: center;
-}
-#pill .pill-mid {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column; justify-content: center; gap: 1px;
-}
-#pill .pill-time {
-  font-size: 18px; font-weight: 500; line-height: 1.1; letter-spacing: 0.2px;
-  color: var(--ink);
-}
-#pill .pill-time .clk-sec {
-  font-size: 11px; font-weight: 400; opacity: 0.48; margin-left: 2px;
-}
-#pill .pill-date {
-  font-size: 9.5px; color: var(--ink-faint); line-height: 1.15;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-#pill .pill-sub {
-  font-size: 10.5px; color: var(--ink-soft); line-height: 1.2;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+#pill .pill-ico { width: 34px; height: 34px; display: grid; place-items: center; }
+#pill .pill-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+#pill .pill-time { font-size: 18px; font-weight: 500; line-height: 1.1; letter-spacing: 0.2px; color: var(--ink); }
+#pill .pill-time .clk-sec { font-size: 11px; font-weight: 400; opacity: 0.48; margin-left: 2px; }
+#pill .pill-date { font-size: 9.5px; color: var(--ink-faint); line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#pill .pill-sub { font-size: 10.5px; color: var(--ink-soft); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #pill.pill-rain .pill-sub { color: #2f80d6; font-weight: 500; }
 body.night #pill.pill-rain .pill-sub { color: #8cc0ff; }
 #pill.pill-warn .pill-sub { color: #d9771c; font-weight: 500; }
 body.night #pill.pill-warn .pill-sub { color: #ffbd59; }
+#pill .pill-temp { font-size: 30px; font-weight: 300; letter-spacing: -1px; line-height: 1; color: var(--ink); flex: 0 0 auto; }
+#pill .pill-temp em { font-style: normal; font-size: 14px; vertical-align: 13px; opacity: 0.8; margin-left: 1px; }
 
-#pill .pill-temp {
-  font-size: 30px; font-weight: 300; letter-spacing: -1px; line-height: 1;
-  color: var(--ink); flex: 0 0 auto;
-}
-#pill .pill-temp em {
-  font-style: normal; font-size: 14px; vertical-align: 13px; opacity: 0.8; margin-left: 1px;
-}
-
-/* 底部流光条（仅雨将至 / 官方预警态点亮） */
 .pill-ribbon {
   position: absolute; left: 28px; right: 28px; bottom: 0; height: 2.5px;
-  border-radius: 2px; opacity: 0; pointer-events: none;
-  transition: opacity .35s ease;
+  border-radius: 2px; opacity: 0; pointer-events: none; transition: opacity .35s ease;
 }
 #pill.pill-rain .pill-ribbon {
   opacity: 1;
@@ -226,6 +205,317 @@ body.night #pill.pill-warn .pill-sub { color: #ffbd59; }
   to   { background-position: -200% 0; }
 }
 
+/* ================= 开放式天光首屏（LS-HERO：无卡片外框！） ================= */
+#widget {
+  padding: 14px 16px 26px;
+  gap: 11px;
+}
+.hero.ls-hero {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  padding: 4px 2px 4px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+}
+
+/* 首屏顶栏：左侧毛玻璃地点胶囊 + 右侧 4 个玻璃圆钮 */
+.hero-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.ls-loc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 268px;
+  height: 34px;
+  padding: 0 13px 0 10px;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.50);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .18s ease, transform .18s ease;
+}
+.ls-loc-pill:hover {
+  background: rgba(255, 255, 255, 0.76);
+  transform: translateY(-1px);
+}
+body.night .ls-loc-pill {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+body.night .ls-loc-pill:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.ls-loc-pill .loc-pin-ico {
+  display: grid; place-items: center; flex: 0 0 auto; color: var(--ink); opacity: 0.78;
+}
+.ls-loc-pill .loc-pin-ico svg { width: 14px; height: 14px; }
+.ls-loc-pill .loc-text {
+  font-size: 13.5px; font-weight: 500; color: var(--ink);
+  white-space: nowrap; flex: 0 0 auto;
+}
+.ls-loc-pill .loc-detail {
+  font-size: 11.5px; font-weight: 400; color: var(--ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ls-hero .win-actions {
+  position: static !important;
+  display: flex;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+.icon-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.50);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  transition: background .18s ease, transform .18s ease;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.82);
+  transform: translateY(-1px);
+}
+body.night .icon-btn {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.13);
+  color: var(--ink);
+}
+body.night .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* 首屏中段：左侧大字温度 + 天况，右侧时钟 + 日期农历 */
+.ls-hero .hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 16px 6px 10px;
+  gap: 12px;
+}
+.ls-hero .now-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0;
+  margin: 0;
+}
+.ls-hero .now-temp {
+  font-size: 108px;
+  font-weight: 300;
+  line-height: 0.94;
+  letter-spacing: -5px;
+  color: var(--ink);
+  display: flex;
+  align-items: flex-start;
+}
+.ls-hero .now-temp em {
+  font-style: normal;
+  font-size: 38px;
+  font-weight: 300;
+  margin: 8px 0 0 6px;
+  opacity: 0.82;
+}
+.now-cond-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.ls-hero .now-icon {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+}
+.ls-hero .now-cond {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  color: var(--ink);
+  margin: 0;
+}
+.ls-hero .now-range {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+.ls-hero .time-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  padding-bottom: 4px;
+}
+.ls-hero .clock {
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+}
+.ls-hero .clock .clk-sec {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ink-faint);
+  margin-left: 3px;
+}
+.ls-hero .date-line {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin-top: 5px;
+}
+.ls-hero .lunar-line {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+.ls-hero .src-line {
+  font-size: 10px;
+  color: var(--ink-faint);
+  margin-top: 4px;
+  max-width: 195px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 首屏底部：统一的 4 栏磨砂玻璃实况横条（体感 | 湿度 | 风 | 气压 + 轻巧朝晚霞副条） */
+.ls-hero .stat-row {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 4px 0 0;
+  gap: 0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 20px -8px rgba(40, 70, 110, 0.14);
+  overflow: hidden;
+}
+.ls-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  height: 60px;
+}
+.ls-glow-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--ls-track);
+  background: rgba(255, 255, 255, 0.22);
+}
+body.night .ls-glow-row {
+  background: rgba(255, 255, 255, 0.03);
+}
+.ls-glow-row b { font-weight: 500; color: var(--ink); }
+.ls-glow-row em { font-style: normal; opacity: 0.4; }
+body.night .ls-hero .stat-row {
+  background: rgba(30, 36, 80, 0.56);
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.4);
+}
+.ls-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  position: relative;
+}
+.ls-stat + .ls-stat::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 16px; bottom: 16px;
+  width: 1px;
+  background: var(--ls-track);
+}
+.ls-stat span {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.ls-stat b {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================= 独立分钟级降水玻璃卡 ================= */
+.mm-card {
+  padding: 14px 16px 12px;
+}
+.mm-card:has(.mm-wrap:empty) {
+  display: none;
+}
+.mm-card .mm-wrap {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  border: none !important;
+}
+.mm-head {
+  margin-bottom: 8px;
+}
+.mm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.mm-title::before {
+  content: '';
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent);
+}
+.mm-sum {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  padding: 2px 9px;
+  border-radius: 10px;
+}
+.mm-bar.rain {
+  background: linear-gradient(180deg, #6cb6f8, #3b8ce0);
+  border-radius: 4px 4px 2px 2px;
+}
+
+/* ================= 提示条与官方预警 ================= */
+.alert-wrap:empty { display: none; }
+.alert-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.alert {
+  border-radius: 16px;
+  padding: 10px 14px;
+  backdrop-filter: blur(16px);
+}
+
 /* ================= 卡片体系（统一 22px 奶油/深靛玻璃 + 标题色点） ================= */
 .card {
   background: var(--paper);
@@ -239,7 +529,9 @@ body.night .card {
   border-color: rgba(255, 255, 255, 0.09);
   box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-#widget.scrolling .card {
+#widget.scrolling .card,
+#widget.scrolling .ls-hero .stat-row,
+#widget.scrolling .ls-loc-pill {
   backdrop-filter: none;
 }
 
@@ -262,65 +554,15 @@ body.night .card {
   font-style: normal; font-size: 11px; font-weight: 400; color: var(--ink-faint);
 }
 
-/* ================= 头部 Hero（通透天光感） ================= */
-.card.hero {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.64) 68%, rgba(255, 255, 255, 0.76) 100%);
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 12px 32px -14px rgba(45, 76, 118, 0.22);
-}
-body.night .card.hero {
-  background: linear-gradient(180deg, rgba(26, 32, 72, 0.38) 0%, rgba(28, 34, 74, 0.62) 70%, rgba(32, 38, 80, 0.72) 100%);
-  border-color: rgba(255, 255, 255, 0.10);
-}
-
-.hero .clock {
-  font-weight: 300; letter-spacing: -1px; color: var(--ink);
-}
-.hero .now-temp {
-  font-weight: 300; letter-spacing: -2px; color: var(--ink);
-}
-.hero .now-cond {
-  font-weight: 500; color: var(--ink);
-}
-.hero .now-range, .hero .date-line, .hero .lunar-line {
-  color: var(--ink-soft);
-}
-.hero .src-line {
-  color: var(--ink-faint);
-}
-
-/* 顶部按钮：玻璃圆钮 */
-.icon-btn {
-  background: rgba(255, 255, 255, 0.56);
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  color: var(--ink);
-  transition: background .18s ease, transform .18s ease, border-color .18s ease;
-}
-.icon-btn:hover {
-  background: rgba(255, 255, 255, 0.85);
-  transform: translateY(-1px);
-}
-body.night .icon-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--ink);
-}
-body.night .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-
 /* 主按钮：琥珀强调 */
 .pill-btn {
   background: linear-gradient(180deg, #f6b04a, #ee9a2e);
   color: #fff;
   border: none;
   box-shadow: 0 4px 12px -4px rgba(238, 154, 46, 0.68);
-  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+  transition: transform .16s ease, filter .16s ease;
 }
-.pill-btn:hover {
-  filter: brightness(1.04);
-  transform: translateY(-1px);
-}
+.pill-btn:hover { filter: brightness(1.04); transform: translateY(-1px); }
 .pill-btn.ghost {
   background: rgba(255, 255, 255, 0.62);
   color: var(--ink);
@@ -333,38 +575,56 @@ body.night .pill-btn.ghost {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-/* 实况四项/指标条 */
-.stat-row .chip {
-  background: rgba(255, 255, 255, 0.58);
-  border: 1px solid rgba(255, 255, 255, 0.78);
-  border-radius: 14px;
-  color: var(--ink-soft);
+/* ================= 昼夜地球卡片（宽幅星空画布 + 底部 4 列淡彩四宫格） ================= */
+#modGlobe .g-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.stat-row .chip b { color: var(--ink); font-weight: 500; }
-body.night .stat-row .chip {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.09);
-}
-
-/* 分钟级降水条 */
-.mm-wrap:not(:empty) {
-  padding: 10px 12px 8px;
-  background: rgba(255, 255, 255, 0.52);
-  border: 1px solid rgba(255, 255, 255, 0.74);
+#modGlobe .g-stage {
+  width: 100%;
+  height: 224px;
   border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(260px 190px at 50% 52%, #1f2b63 0%, #121a42 58%, #0a0f2a 100%);
+  overflow: hidden;
 }
-body.night .mm-wrap:not(:empty) {
-  background: rgba(22, 27, 62, 0.50);
-  border-color: rgba(255, 255, 255, 0.08);
+#modGlobe .g-stage svg {
+  width: 220px;
+  height: 220px;
 }
-.mm-bar.rain {
-  background: linear-gradient(180deg, #6cb6f8, #3b8ce0);
-  border-radius: 4px 4px 2px 2px;
+#modGlobe .g-col {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-
-/* 提示条与官方预警 */
-.alert {
+#modGlobe .g-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+#modGlobe .g-tile {
   border-radius: 14px;
+  padding: 9px 10px 8px;
+  border: none;
+}
+#modGlobe .g-tile.t-sunrise  { background: linear-gradient(160deg, rgba(255, 196, 120, 0.30), rgba(255, 196, 120, 0.08)); }
+#modGlobe .g-tile.t-sunset   { background: linear-gradient(160deg, rgba(245, 140, 100, 0.26), rgba(245, 140, 100, 0.06)); }
+#modGlobe .g-tile.t-moonrise { background: linear-gradient(160deg, rgba(150, 160, 230, 0.26), rgba(150, 160, 230, 0.06)); }
+#modGlobe .g-tile.t-moonset  { background: linear-gradient(160deg, rgba(120, 140, 190, 0.22), rgba(120, 140, 190, 0.05)); }
+#modGlobe .g-t { font-size: 11px; color: var(--ink-soft); }
+#modGlobe .g-v { font-size: 16px; font-weight: 500; color: var(--ink); margin-top: 3px; }
+#modGlobe .g-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#modGlobe .g-bar {
+  height: 8px;
+  border-radius: 4px;
 }
 
 /* ================= 逐时预报 ================= */
@@ -388,60 +648,83 @@ body.night .h-item.now {
 }
 
 /* ================= 七日预报（含当前温度光点） ================= */
-.d-row {
-  border-bottom-color: var(--ls-track);
-}
+.d-row { border-bottom-color: var(--ls-track); }
 .d-bar {
-  position: relative;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--ls-track);
-  overflow: visible;
+  position: relative; height: 6px; border-radius: 3px;
+  background: var(--ls-track); overflow: visible;
 }
 .d-bar > i {
   border-radius: 3px;
   background: linear-gradient(90deg, #6fb5f2, #93d4bc 38%, #f6cb62 68%, #f28e58);
 }
 .d-now-dot {
-  position: absolute;
-  top: 50%;
-  width: 10px; height: 10px;
-  margin: -5px 0 0 -5px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 0 0 2.5px var(--ink), 0 2px 6px rgba(0, 0, 0, 0.25);
-  z-index: 2;
+  position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: #ffffff;
+  box-shadow: 0 0 0 2.5px var(--ink), 0 2px 6px rgba(0, 0, 0, 0.25); z-index: 2;
 }
 body.night .d-now-dot {
   box-shadow: 0 0 0 2.5px #1b1f45, 0 0 8px rgba(255, 255, 255, 0.45);
 }
 
-/* ================= 空气质量 & 生活指南 ================= */
-.aqi-num {
-  font-weight: 300;
-  letter-spacing: -1px;
+/* ================= 空气质量（半圆弧仪表盘 + 3×2 污染物轻格） & 生活指南 ================= */
+.aqi-card .aqi-main {
+  position: relative;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  margin: 2px 0 10px;
 }
-.aqi-level {
-  border-radius: 10px;
-  font-weight: 500;
+.aqi-arc-svg {
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
-.aqi-bar {
-  height: 7px;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #5ccb8a 0%, #f5d048 30%, #f59a3c 55%, #e5533d 78%, #8e4fb8 100%);
+.aqi-card .aqi-num {
+  position: relative; z-index: 1;
+  font-size: 32px; font-weight: 300; line-height: 1; letter-spacing: -1px;
+  color: var(--ink);
 }
-.aqi-bar-fill {
-  width: 12px; height: 12px;
-  top: -2.5px;
-  border-radius: 50%;
-  background: #ffffff;
-  border: 2.5px solid #2f9a5e;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+.aqi-card .aqi-side {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.aqi-cell {
+.aqi-card .aqi-level {
+  font-size: 11px; font-weight: 500;
+  padding: 2px 9px; border-radius: 9px;
+}
+.aqi-card .aqi-primary {
+  display: none;
+}
+.aqi-card .aqi-bar {
+  height: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.aqi-card .aqi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.aqi-card .aqi-cell {
   background: var(--ls-soft);
   border-radius: 10px;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
 }
+.aqi-card .aqi-cell span { font-size: 9.5px; color: var(--ink-faint); }
+.aqi-card .aqi-cell b { font-size: 13px; font-weight: 500; color: var(--ink); }
+
 .life-icon {
   border-radius: 10px;
   background: rgba(240, 162, 58, 0.14);
@@ -452,54 +735,45 @@ body.night .life-icon {
   color: var(--sun);
 }
 
-/* ================= 昼夜地球卡片 ================= */
-#modGlobe .g-stage,
-#modGlobe .globe-stage {
-  border-radius: 16px;
-}
-#modGlobe .g-bar {
-  height: 8px; border-radius: 4px;
-}
-
-/* ================= 16 张扩展四联卡 ================= */
-.xcard {
+/* ================= 16 张扩展四联卡（彻底覆盖旧版粉彩底色 → 统一天光玻璃） ================= */
+.card.xcard[class*="x-"] {
   border-radius: 20px;
   background: var(--paper);
   border: 1px solid var(--ls-border);
   box-shadow: var(--shadow);
-  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  padding: 13px 14px;
+  transition: transform .2s ease, box-shadow .2s ease;
 }
-.xcard:hover {
+.card.xcard[class*="x-"]::before {
+  background: radial-gradient(120% 80% at 80% -15%, rgba(255, 255, 255, 0.42), transparent 55%);
+}
+.card.xcard[class*="x-"]:hover {
   transform: translateY(-1px);
 }
-body.night .xcard {
+body.night .card.xcard[class*="x-"] {
   background: rgba(36, 42, 86, 0.58);
   border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 28px -12px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+body.night .card.xcard[class*="x-"]::before {
+  background: radial-gradient(120% 80% at 80% -15%, rgba(160, 190, 255, 0.08), transparent 55%);
 }
 .x-ico {
   width: 26px; height: 26px;
   border-radius: 9px;
   background: var(--ls-soft);
 }
-.x-uv .x-ico, .x-dry .x-ico, .x-alerts .x-ico { background: rgba(240, 162, 58, 0.15); }
-.x-pollen .x-ico, .x-history .x-ico, .x-radar .x-ico { background: rgba(60, 154, 85, 0.14); }
-.x-wind .x-ico, .x-pressure .x-ico, .x-cities .x-ico { background: rgba(31, 143, 126, 0.14); }
-.x-visib .x-ico, .x-carwash .x-ico, .x-precipstat .x-ico { background: rgba(59, 140, 224, 0.14); }
-.x-dress .x-ico, .x-moon .x-ico { background: rgba(110, 95, 208, 0.14); }
-.x-cold .x-ico, .x-share .x-ico { background: rgba(212, 85, 63, 0.14); }
-
-.x-title {
-  font-size: 13px; font-weight: 500; color: var(--ink);
-}
-.x-val {
-  font-size: 24px; font-weight: 300; letter-spacing: -0.5px; color: var(--ink);
-}
+.x-uv .x-ico, .x-dry .x-ico, .x-alerts .x-ico { background: rgba(240, 162, 58, 0.16); }
+.x-pollen .x-ico, .x-history .x-ico, .x-radar .x-ico { background: rgba(60, 154, 85, 0.15); }
+.x-wind .x-ico, .x-pressure .x-ico, .x-cities .x-ico { background: rgba(31, 143, 126, 0.15); }
+.x-visib .x-ico, .x-carwash .x-ico, .x-precipstat .x-ico { background: rgba(59, 140, 224, 0.15); }
+.x-dress .x-ico, .x-moon .x-ico { background: rgba(110, 95, 208, 0.15); }
+.x-cold .x-ico, .x-share .x-ico { background: rgba(212, 85, 63, 0.15); }
+.x-title { font-size: 13px; font-weight: 500; color: var(--ink); }
+.x-val { font-size: 24px; font-weight: 300; letter-spacing: -0.5px; color: var(--ink); }
 
 /* ================= 万年历 ================= */
-.alm-cell {
-  border-radius: 13px;
-  transition: background .15s ease;
-}
+.alm-cell { border-radius: 13px; transition: background .15s ease; }
 .alm-cell.today {
   background: linear-gradient(170deg, #f6b04a, #ee9a2e);
   box-shadow: 0 6px 14px -6px rgba(238, 154, 46, 0.78);
@@ -510,26 +784,17 @@ body.night .xcard {
   background: color-mix(in srgb, var(--sun) 16%, transparent);
   box-shadow: inset 0 0 0 1.5px var(--sun);
 }
-.alm-detail {
-  border-radius: 16px;
-  background: var(--ls-soft);
-}
+.alm-detail { border-radius: 16px; background: var(--ls-soft); }
 .alm-h.cur {
   background: color-mix(in srgb, var(--sun) 20%, transparent);
   box-shadow: inset 0 0 0 1.5px var(--sun);
 }
-.cat-chip.on {
-  background: var(--ink);
-  color: #fff;
-}
-body.night .cat-chip.on {
-  background: var(--sun);
-  color: #181c40;
-}
+.cat-chip.on { background: var(--ink); color: #fff; }
+body.night .cat-chip.on { background: var(--sun); color: #181c40; }
 
 /* ================= 更新提醒横幅（深色浮层胶囊） ================= */
 .update-banner {
-  background: rgba(24, 30, 56, 0.90);
+  background: rgba(24, 30, 56, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 20px;
   color: #f4f6fc;
@@ -542,15 +807,15 @@ body.night .cat-chip.on {
   border-color: transparent;
 }
 
-/* ================= 设置面板 ================= */
+/* ================= 设置面板（分组玻璃 + iOS 风格开关） ================= */
 .panel {
   border-radius: 26px;
-  background: rgba(246, 247, 249, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.88);
+  background: rgba(246, 247, 249, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.90);
   box-shadow: 0 24px 54px -16px rgba(20, 35, 60, 0.32);
 }
 body.night .panel {
-  background: linear-gradient(180deg, rgba(34, 40, 86, 0.96), rgba(24, 28, 64, 0.96));
+  background: linear-gradient(180deg, rgba(34, 40, 86, 0.97), rgba(24, 28, 64, 0.97));
   border-color: rgba(255, 255, 255, 0.10);
   box-shadow: 0 24px 54px -16px rgba(4, 6, 22, 0.68);
 }
@@ -562,12 +827,55 @@ body.night .panel {
   border: 1px solid var(--ls-border);
   color: var(--ink);
 }
+.panel label.check {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--ls-soft);
+  border: 1px solid var(--ls-border);
+  margin-bottom: 6px;
+}
+.panel label.check input[type="checkbox"],
+.panel .mod-row > input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 38px; height: 22px;
+  border-radius: 11px;
+  background: var(--ls-track);
+  position: relative;
+  flex: 0 0 38px;
+  cursor: pointer;
+  transition: background .2s ease;
+}
+.panel label.check input[type="checkbox"]::after,
+.panel .mod-row > input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform .2s ease;
+}
+.panel label.check input[type="checkbox"]:checked,
+.panel .mod-row > input[type="checkbox"]:checked {
+  background: linear-gradient(180deg, #f6b04a, #ee9a2e);
+}
+.panel label.check input[type="checkbox"]:checked::after,
+.panel .mod-row > input[type="checkbox"]:checked::after {
+  transform: translateX(16px);
+}
 .panel .mod-row {
   border-radius: 14px;
   background: var(--ls-soft);
   border: 1px solid var(--ls-border);
 }
-.panel input[type="checkbox"] {
+.panel .mod-duo input[type="checkbox"] {
   accent-color: #ee9a2e;
 }
 

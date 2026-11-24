@@ -45,45 +45,49 @@
   <!-- ======== 组件内容 ======== -->
   <main id="widget">
 
-    <!-- 头部：时间 + 实况天气 -->
-    <header class="card hero">
+    <!-- 头部：开放式天光首屏（天空直接作为画布，底部 4 栏磨砂实况条） -->
+    <header class="hero ls-hero">
+      <div class="hero-nav drag">
+        <button class="ls-loc-pill no-drag" id="btnSwitchLoc" title="点击切换或搜索地点">
+          <span class="loc-pin-ico" data-ui="pin"></span>
+          <span class="loc-text" id="locText">正在定位…</span>
+          <span class="loc-detail" id="locDetail"></span>
+        </button>
+        <div class="win-actions no-drag">
+          <button class="icon-btn" id="btnRefresh" title="立即刷新"><span data-ui="refresh"></span></button>
+          <button class="icon-btn" id="btnPin" title="窗口置顶"><span data-ui="pin"></span></button>
+          <button class="icon-btn" id="btnSettings" title="设置与地点"><span data-ui="sliders"></span></button>
+          <button class="icon-btn" id="btnClose" title="隐藏到托盘（托盘里可退出）"><span data-ui="close"></span></button>
+        </div>
+      </div>
+
       <div class="hero-top drag">
+        <div class="now-block">
+          <div class="now-temp"><span id="tempNow">--</span><em>°</em></div>
+          <div class="now-cond-row">
+            <div class="now-icon" id="nowIcon"></div>
+            <div class="now-cond" id="condText">--</div>
+          </div>
+          <div class="now-range" id="tempRange"></div>
+        </div>
         <div class="time-block">
           <div class="clock"><span id="clockHM">--:--</span><em class="clk-sec" id="clockSec">00</em></div>
           <div class="date-line" id="dateLine">正在加载…</div>
           <div class="lunar-line" id="lunarLine"></div>
           <div class="src-line" id="srcLine" title="天气/空气质量：Open-Meteo · 地名：OpenStreetMap">正在获取数据…</div>
         </div>
-        <div class="now-block">
-          <div class="now-icon" id="nowIcon"></div>
-          <div class="now-temp"><span id="tempNow">--</span><em>°</em></div>
-          <div class="now-cond" id="condText">--</div>
-          <div class="now-range" id="tempRange"></div>
-        </div>
       </div>
 
-      <div class="alert-wrap" id="alertWrap"></div>
       <div class="stat-row" id="statRow"></div>
-      <!-- 分钟级降水条：紧凑单条嵌入 hero，与 statRow 同级（不另起栏目） -->
-      <div class="mm-wrap" id="mmWrap"></div>
-
-      <div class="loc-bar no-drag">
-        <div class="loc-pin"><span data-ui="pin"></span></div>
-        <div class="loc-texts">
-          <div class="loc-text" id="locText">正在定位…</div>
-          <div class="loc-detail" id="locDetail"></div>
-        </div>
-        <button class="pill-btn" id="btnSwitchLoc">切换地点</button>
-        <button class="pill-btn ghost" id="btnRefresh"><span class="btn-ico" data-ui="refresh"></span>刷新</button>
-      </div>
-
-      <!-- 窗口按钮必须放在拖拽区(hero-top)之后：Electron 按 DOM 顺序计算可拖拽区域 -->
-      <div class="win-actions no-drag">
-        <button class="icon-btn" id="btnPin" title="窗口置顶"><span data-ui="pin"></span></button>
-        <button class="icon-btn" id="btnSettings" title="设置与地点"><span data-ui="sliders"></span></button>
-        <button class="icon-btn" id="btnClose" title="隐藏到托盘（托盘里可退出）"><span data-ui="close"></span></button>
-      </div>
     </header>
+
+    <!-- 提示条与官方预警 -->
+    <div class="alert-wrap" id="alertWrap"></div>
+
+    <!-- 分钟级降水独立玻璃卡 -->
+    <section class="card mm-card" id="modMinutely">
+      <div class="mm-wrap" id="mmWrap"></div>
+    </section>
 
     <!-- 昼夜地球：真实大陆轮廓随恒星时旋转，晨昏线分隔昼夜 -->
     <section class="card" id="modGlobe">
