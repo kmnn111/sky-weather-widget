@@ -819,12 +819,28 @@ function createWindow() {
     x = clamp(x, wa.x, wa.x + wa.width - size.w);
   } else if (settings.winPos && Number.isFinite(settings.winPos.x)) { x = settings.winPos.x; y = settings.winPos.y; }
   else { x = wa.x + wa.width - size.w - 36; y = wa.y + wa.height - size.h - 24; }
-  // 位置自愈：落盘位置已完全离开所有屏幕（拔显示器/换分辨率残留的坏数据）→ 回退默认位
-  const onScreen = screen.getAllDisplays().some(d => {
-    const a = d.workArea;
-    return x < a.x + a.width && x + size.w > a.x && y < a.y + a.height && y + size.h > a.y;
-  });
-  if (!onScreen) { x = wa.x + wa.width - size.w - 36; y = wa.y + wa.height - size.h - 24; }
+  // 位置自愈：落盘位置在任一屏幕上不完整可见（拔显示器/换分辨率/改 DPI 缩放残留的坏数据）→ 先按
+  // 「相交面积最大的显示器」clamp 回其工作区（保留用户的相对摆放意图），与所有屏幕都不相交才回退默认位。
+  // 旧版用「相交判定」（窗口与任一 workArea 有交集即在屏上）：125% 缩放把逻辑屏宽从 2560 压到 2048 后，
+  // x=1904 的历史合法位仅露 144px 在屏内仍算「在屏上」，窗口 70% 悬在屏外（2026-11-25 用户实报）。
+  const fits = (a) => x >= a.x && y >= a.y && x + size.w <= a.x + a.width && y + size.h <= a.y + a.height;
+  const overlaps = (a) => x < a.x + a.width && x + size.w > a.x && y < a.y + a.height && y + size.h > a.y;
+  const area = (a) => {
+    const w = Math.min(x + size.w, a.x + a.width) - Math.max(x, a.x);
+    const h = Math.min(y + size.h, a.y + a.height) - Math.max(y, a.y);
+    return Math.max(0, w) * Math.max(0, h);
+  };
+  const displays = screen.getAllDisplays();
+  if (!displays.some(d => fits(d.workArea))) {
+    const best = displays.filter(d => overlaps(d.workArea)).sort((a, b) => area(b.workArea) - area(a.workArea))[0];
+    if (best) {
+      const a = best.workArea;
+      x = clamp(x, a.x, a.x + a.width - size.w);
+      y = clamp(y, a.y, a.y + a.height - size.h);
+    } else {
+      x = wa.x + wa.width - size.w - 36; y = wa.y + wa.height - size.h - 24;
+    }
+  }
 
   win = new BrowserWindow({
     x: Math.round(x), y: Math.round(y),
